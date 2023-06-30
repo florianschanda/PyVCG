@@ -16,10 +16,6 @@ class SMTBasicTests(unittest.TestCase):
         self.smtlib.add_statement(statement)
         self.ctx.add_statement(statement)
 
-    def add_relevant_declaration(self, declaration):
-        self.smtlib.add_relevant_declaration(declaration)
-        self.ctx.add_relevant_declaration(declaration)
-
     def generate(self):
         self.smtlib.generate()
         self.ctx.generate()
@@ -65,8 +61,8 @@ class SMTBasicTests(unittest.TestCase):
 
     def test_Simple_Sat_Result(self):
         sym = smt.Constant(smt.BUILTIN_INTEGER, "potato")
-        decl = smt.Constant_Declaration(sym)
-        self.add_relevant_declaration(decl)
+        decl = smt.Constant_Declaration(sym, relevant=True)
+        self.add_statement(decl)
 
         self.assertResult(
             "sat",
@@ -81,12 +77,16 @@ class SMTBasicTests(unittest.TestCase):
 
     def test_Simple_Sat_Result_2(self):
         sym = smt.Constant(smt.BUILTIN_INTEGER, "potato")
-        decl = smt.Constant_Declaration(sym, value=smt.Integer_Literal(-42))
-        self.add_relevant_declaration(decl)
+        decl = smt.Constant_Declaration(sym,
+                                        value    = smt.Integer_Literal(-42),
+                                        relevant = True)
+        self.add_statement(decl)
 
         sym = smt.Constant(smt.BUILTIN_INTEGER, "kitten")
-        decl = smt.Constant_Declaration(sym, value=smt.Integer_Literal(666))
-        self.add_relevant_declaration(decl)
+        decl = smt.Constant_Declaration(sym,
+                                        value    = smt.Integer_Literal(666),
+                                        relevant = True)
+        self.add_statement(decl)
 
         self.assertResult(
             "sat",
@@ -106,8 +106,9 @@ class SMTBasicTests(unittest.TestCase):
     def test_Simple_Unsat_Result(self):
         sym = smt.Constant(smt.BUILTIN_BOOLEAN, "potato")
         decl = smt.Constant_Declaration(sym,
-                                        value=smt.Boolean_Literal(False))
-        self.add_relevant_declaration(decl)
+                                        value    = smt.Boolean_Literal(False),
+                                        relevant = True)
+        self.add_statement(decl)
 
         ass = smt.Assertion(sym)
         self.add_statement(ass)
@@ -127,8 +128,8 @@ class SMTBasicTests(unittest.TestCase):
 
     def test_Simple_Sat_Bool_Result(self):
         sym = smt.Constant(smt.BUILTIN_BOOLEAN, "potato")
-        decl = smt.Constant_Declaration(sym)
-        self.add_relevant_declaration(decl)
+        decl = smt.Constant_Declaration(sym, relevant=True)
+        self.add_statement(decl)
 
         ass = smt.Assertion(sym)
         self.add_statement(ass)
@@ -148,8 +149,8 @@ class SMTBasicTests(unittest.TestCase):
 
     def test_Simple_Sat_Real_Free_Result(self):
         sym = smt.Constant(smt.BUILTIN_REAL, "potato")
-        decl = smt.Constant_Declaration(sym)
-        self.add_relevant_declaration(decl)
+        decl = smt.Constant_Declaration(sym, relevant=True)
+        self.add_statement(decl)
 
         self.assertResult(
             "sat",

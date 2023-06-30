@@ -76,12 +76,10 @@ class Context(metaclass=ABCMeta):
     def add_statement(self, statement):
         assert isinstance(statement, Statement)
         self.statements.append(statement)
+        if isinstance(statement, Constant_Declaration) and \
+           statement.is_relevant:
+            self.relevant_values.append(statement.symbol)
         self.logics |= statement.get_required_logics()
-
-    def add_relevant_declaration(self, declaration):
-        assert isinstance(declaration, Constant_Declaration)
-        self.add_statement(declaration)
-        self.relevant_values.append(declaration.symbol)
 
     @abstractmethod
     def generate(self):
@@ -252,14 +250,16 @@ class Expression(Node, metaclass=ABCMeta):
 ##############################################################################
 
 class Constant_Declaration(Statement):
-    def __init__(self, symbol, value=None, comment=None):
+    def __init__(self, symbol, value=None, comment=None, relevant=False):
         super().__init__(comment)
         assert isinstance(symbol, Constant)
         assert value is None or (isinstance(value, Expression) and
                                  value.sort is symbol.sort)
+        assert isinstance(relevant, bool)
 
-        self.symbol = symbol
-        self.value  = value
+        self.symbol      = symbol
+        self.value       = value
+        self.is_relevant = relevant
 
     def get_required_logics(self):
         logics = self.symbol.get_required_logics()
@@ -380,3 +380,22 @@ class Constant(Expression):
 
         sort = self.sort.tr_cvc5(context)
         return context.solver.mkConst(sort, self.name)
+
+
+class Boolean_Negation(Expression):
+    def __init__(self, expression):
+        assert isinstance(expression, Expression)
+        super().__init__(expression.sort)
+
+        self.expression = expression
+
+    def tr_smtlib(self):
+        return "(not %s)" % self.expression.tr_smtlib()
+
+    def gen_cvc5(self, context):
+        assert isinstance(context, CVC5_Context)
+
+        return self.expression.tr_cvc5(context).notTerm()
+
+    def get_required_logics(self):
+        return self.expression.get_required_logics()

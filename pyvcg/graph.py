@@ -22,6 +22,8 @@
 ##                                                                          ##
 ##############################################################################
 
+from pyvcg import smt
+
 
 class DAG:
     def __init__(self):
@@ -64,6 +66,10 @@ class DAG:
         if isinstance(start, Check):
             yield [start.node_id]
 
+    def all_mapped_paths_to_checks(self):
+        for path in self.all_paths_to_checks():
+            yield [self.nodes[node_id] for node_id in path]
+
 
 class Node:
     def __init__(self, graph):
@@ -73,6 +79,7 @@ class Node:
         self.node_id  = None
         self.outgoing = []
         self.incoming = []
+        self.items    = []
 
         self.graph.register_node(self)
 
@@ -85,6 +92,10 @@ class Node:
         self.outgoing.append(other)
         other.incoming.append(self)
 
+    def add_statement(self, statement):
+        assert isinstance(statement, smt.Statement)
+        self.items.append(statement)
+
 
 class Start(Node):
     # Special "program start" node
@@ -93,8 +104,7 @@ class Start(Node):
 
 
 class Assumption(Node):
-    # Assumptions insert knowledge on a path that is not valid on
-    # other paths
+    # Assumptions insert knowledge and declarations
     def __init__(self, graph):  # pylint: disable=useless-parent-delegation
         super().__init__(graph)
 
@@ -104,6 +114,16 @@ class Check(Node):
     # nodes
     def __init__(self, graph):  # pylint: disable=useless-parent-delegation
         super().__init__(graph)
+        self.goals = []
+
+    def add_statement(self, statement):
+        assert False
+
+    def add_goal(self, expression):
+        assert isinstance(expression, smt.Expression)
+        assert expression.sort is smt.BUILTIN_BOOLEAN
+        self.goals.append(expression)
+        self.items.append(smt.Assertion(expression))
 
 
 class Sequential_Choices(Node):  # pragma: no cover
