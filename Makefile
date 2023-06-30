@@ -19,3 +19,6 @@ lint: style
 		--reports=no \
 		--score=no \
 		--extension-pkg-allow-list=cvc5
+
+wheel:
+	@python3 setup.py bdist_wheel

@@ -1,3 +1,8 @@
 *~
 *.pyc
-.coverage
+.coverage*
+
+# Packaging
+*.egg-info
+build
+dist
