@@ -17,4 +17,5 @@ lint: style
 	@echo "\033[33mprecommit:\033[0m lint check"
 	@python3 -m pylint --rcfile=pylint3.cfg pyvcg \
 		--reports=no \
-		--score=no
+		--score=no \
+		--extension-pkg-allow-list=cvc5

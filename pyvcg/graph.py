@@ -106,7 +106,7 @@ class Check(Node):
         super().__init__(graph)
 
 
-class Sequential_Choices(Node):
+class Sequential_Choices(Node):  # pragma: no cover
     # Models an if... elseif... elseif... else... construct. The
     # semantics are that each path is evaluated in turn until we find
     # one that matches.
