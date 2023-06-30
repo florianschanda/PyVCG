@@ -2,6 +2,7 @@ import unittest
 
 from pyvcg import graph
 
+
 class GraphBasicTests(unittest.TestCase):
     def setUp(self):
         self.g = graph.DAG()

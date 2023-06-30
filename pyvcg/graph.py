@@ -88,21 +88,21 @@ class Node:
 
 class Start(Node):
     # Special "program start" node
-    def __init__(self, graph):
+    def __init__(self, graph):  # pylint: disable=useless-parent-delegation
         super().__init__(graph)
 
 
 class Assumption(Node):
     # Assumptions insert knowledge on a path that is not valid on
     # other paths
-    def __init__(self, graph):
+    def __init__(self, graph):  # pylint: disable=useless-parent-delegation
         super().__init__(graph)
 
 
 class Check(Node):
     # Emit a VC for the given goal, contributes knowledge on outgoing
     # nodes
-    def __init__(self, graph):
+    def __init__(self, graph):  # pylint: disable=useless-parent-delegation
         super().__init__(graph)
 
 
@@ -116,5 +116,5 @@ class Sequential_Choices(Node):
     # * a -> stuff
     # * not a /\ b -> stuff
     # * not a /\ not b -> stuff
-    def __init__(self, graph):
+    def __init__(self, graph):  # pylint: disable=useless-parent-delegation
         super().__init__(graph)
