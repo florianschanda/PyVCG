@@ -12,21 +12,28 @@ class SMTBasicTests(unittest.TestCase):
         self.out = StringIO()
         self.smtlib = smt.SMTLIB_Context(self.out)
 
-    def write_statement(self, statement):
-        self.smtlib.write_statement(statement)
-        self.ctx.write_statement(statement)
+    def add_statement(self, statement):
+        self.smtlib.add_statement(statement)
+        self.ctx.add_statement(statement)
 
-    def register_relevant_value(self, constant):
-        self.smtlib.register_relevant_value(constant)
-        self.ctx.register_relevant_value(constant)
+    def add_relevant_declaration(self, declaration):
+        self.smtlib.add_relevant_declaration(declaration)
+        self.ctx.add_relevant_declaration(declaration)
+
+    def generate(self):
+        self.smtlib.generate()
+        self.ctx.generate()
 
     def assertOutput(self, string):
         string = "\n".join(s.strip() for s in string.strip().splitlines())
         self.assertSequenceEqual(string.splitlines(),
                                  self.out.getvalue().strip().splitlines())
 
-    def assertResult(self, status):
+    def assertResult(self, status, string):
         assert status in ("sat", "unsat", "unknown")
+
+        self.generate()
+        self.assertOutput(string)
         self.assertEqual(self.ctx.get_status(), status)
 
     def test_Simple_Free_Const(self):
@@ -57,40 +64,34 @@ class SMTBasicTests(unittest.TestCase):
         self.assertOutput("(define-const |pot.ato| Bool false)")
 
     def test_Simple_Sat_Result(self):
-        self.smtlib.write_preamble()
-
         sym = smt.Constant(smt.BUILTIN_INTEGER, "potato")
         decl = smt.Constant_Declaration(sym)
-        self.write_statement(decl)
+        self.add_relevant_declaration(decl)
 
-        self.smtlib.write_check_sat()
-        self.assertOutput(
+        self.assertResult(
+            "sat",
             """
-            (set-logic ALL)
+            (set-logic QF_UFLIA)
             (set-option :produce-models true)
             (declare-const potato Int)
             (check-sat)
+            (get-value (potato))
             """
         )
-        self.assertResult("sat")
 
     def test_Simple_Sat_Result_2(self):
-        self.smtlib.write_preamble()
-
         sym = smt.Constant(smt.BUILTIN_INTEGER, "potato")
         decl = smt.Constant_Declaration(sym, value=smt.Integer_Literal(-42))
-        self.write_statement(decl)
-        self.register_relevant_value(sym)
+        self.add_relevant_declaration(decl)
 
         sym = smt.Constant(smt.BUILTIN_INTEGER, "kitten")
         decl = smt.Constant_Declaration(sym, value=smt.Integer_Literal(666))
-        self.write_statement(decl)
-        self.register_relevant_value(sym)
+        self.add_relevant_declaration(decl)
 
-        self.smtlib.write_check_sat()
-        self.assertOutput(
+        self.assertResult(
+            "sat",
             """
-            (set-logic ALL)
+            (set-logic QF_UFLIA)
             (set-option :produce-models true)
             (define-const potato Int (- 42))
             (define-const kitten Int 666)
@@ -99,48 +100,43 @@ class SMTBasicTests(unittest.TestCase):
             (get-value (kitten))
             """
         )
-        self.assertResult("sat")
         self.assertEqual(self.ctx.values["potato"], -42)
         self.assertEqual(self.ctx.values["kitten"], 666)
 
     def test_Simple_Unsat_Result(self):
-        self.smtlib.write_preamble()
-
         sym = smt.Constant(smt.BUILTIN_BOOLEAN, "potato")
         decl = smt.Constant_Declaration(sym,
                                         value=smt.Boolean_Literal(False))
-        self.write_statement(decl)
+        self.add_relevant_declaration(decl)
 
         ass = smt.Assertion(sym)
-        self.write_statement(ass)
+        self.add_statement(ass)
 
-        self.smtlib.write_check_sat()
-        self.assertOutput(
+        self.assertResult(
+            "unsat",
             """
-            (set-logic ALL)
+            (set-logic QF_UF)
             (set-option :produce-models true)
             (define-const potato Bool false)
             (assert potato)
             (check-sat)
+            (get-value (potato))
             """
         )
-        self.assertResult("unsat")
+        self.assertEqual(self.ctx.values, {})
 
     def test_Simple_Sat_Bool_Result(self):
-        self.smtlib.write_preamble()
-
         sym = smt.Constant(smt.BUILTIN_BOOLEAN, "potato")
         decl = smt.Constant_Declaration(sym)
-        self.write_statement(decl)
-        self.register_relevant_value(sym)
+        self.add_relevant_declaration(decl)
 
         ass = smt.Assertion(sym)
-        self.write_statement(ass)
+        self.add_statement(ass)
 
-        self.smtlib.write_check_sat()
-        self.assertOutput(
+        self.assertResult(
+            "sat",
             """
-            (set-logic ALL)
+            (set-logic QF_UF)
             (set-option :produce-models true)
             (declare-const potato Bool)
             (assert potato)
@@ -148,26 +144,21 @@ class SMTBasicTests(unittest.TestCase):
             (get-value (potato))
             """
         )
-        self.assertResult("sat")
         self.assertEqual(self.ctx.values["potato"], True)
 
     def test_Simple_Sat_Real_Free_Result(self):
-        self.smtlib.write_preamble()
-
         sym = smt.Constant(smt.BUILTIN_REAL, "potato")
         decl = smt.Constant_Declaration(sym)
-        self.write_statement(decl)
-        self.register_relevant_value(sym)
+        self.add_relevant_declaration(decl)
 
-        self.smtlib.write_check_sat()
-        self.assertOutput(
+        self.assertResult(
+            "sat",
             """
-            (set-logic ALL)
+            (set-logic QF_UFLRA)
             (set-option :produce-models true)
             (declare-const potato Real)
             (check-sat)
             (get-value (potato))
             """
         )
-        self.assertResult("sat")
         self.assertIsInstance(self.ctx.values["potato"], Fraction)

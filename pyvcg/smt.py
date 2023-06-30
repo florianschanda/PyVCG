@@ -44,14 +44,48 @@ def escape(name):
 class Context(metaclass=ABCMeta):
     def __init__(self):
         self.relevant_values = []
+        self.statements      = []
+        self.logics          = set()
+
+    def get_logic(self):
+        allowed_logics = set(["quant", "int", "real", "nonlinear"])
+        assert not self.logics or self.logics < allowed_logics, \
+            "%s is not a permitted logic" % (self.logics - allowed_logics)
+
+        if "quant" in self.logics:  # pragma: no cover
+            logic = ""
+        else:
+            logic = "QF_"
+
+        logic += "UF"
+
+        if "int" in self.logics or \
+           "real" in self.logics:
+            if "nonlinear" in self.logics:  # pragma: no cover
+                logic += "N"
+            else:
+                logic += "L"
+            if "int" in self.logics:
+                logic += "I"
+            if "real" in self.logics:
+                logic += "R"
+            logic += "A"
+
+        return logic
+
+    def add_statement(self, statement):
+        assert isinstance(statement, Statement)
+        self.statements.append(statement)
+        self.logics |= statement.get_required_logics()
+
+    def add_relevant_declaration(self, declaration):
+        assert isinstance(declaration, Constant_Declaration)
+        self.add_statement(declaration)
+        self.relevant_values.append(declaration.symbol)
 
     @abstractmethod
-    def write_statement(self, statement):
-        assert isinstance(statement, Statement)
-
-    def register_relevant_value(self, constant):
-        assert isinstance(constant, Constant)
-        self.relevant_values.append(constant)
+    def generate(self):
+        pass
 
     @abstractmethod
     def get_status(self):
@@ -62,15 +96,15 @@ class CVC5_Context(Context):
     def __init__(self):
         super().__init__()
         self.solver = cvc5.Solver()
-        self.solver.setOption("produce-models", "true")
-        self.solver.setLogic("ALL")
 
         self.mapping = {}
-        self.values = {}
+        self.values  = {}
 
-    def write_statement(self, statement):
-        assert isinstance(statement, Statement)
-        statement.write_cvc5(self)
+    def generate(self):
+        self.solver.setOption("produce-models", "true")
+        self.solver.setLogic(self.get_logic())
+        for statement in self.statements:
+            statement.write_cvc5(self)
 
     def get_status(self):
         result = self.solver.checkSat()
@@ -98,25 +132,26 @@ class SMTLIB_Context(Context):
         assert isinstance(fd, TextIOBase)
         self.fd = fd
 
-    def write_preamble(self):
-        self.fd.write("(set-logic ALL)\n")
-        self.fd.write("(set-option :produce-models true)\n")
-
-    def write_statement(self, statement):
-        assert isinstance(statement, Statement)
-        statement.write_smtlib(self.fd)
-
-    def write_check_sat(self):
+    def generate(self):
+        self.write_preamble()
+        for statement in self.statements:
+            statement.write_smtlib(self.fd)
         self.fd.write("(check-sat)\n")
         for constant in self.relevant_values:
             self.fd.write("(get-value (%s))\n" % constant.tr_smtlib())
+
+    def write_preamble(self):
+        self.fd.write("(set-logic %s)\n" % self.get_logic())
+        self.fd.write("(set-option :produce-models true)\n")
 
     def get_status(self):  # pragma: no cover
         pass
 
 
 class Node(metaclass=ABCMeta):
-    pass
+    @abstractmethod
+    def get_required_logics(self):
+        return set()
 
 
 ##############################################################################
@@ -163,6 +198,16 @@ class Sort(Node):
         else:
             assert False
 
+    def get_required_logics(self):
+        if self.name == "Bool":
+            return set()
+        elif self.name == "Int":
+            return set(["int"])
+        elif self.name == "Real":
+            return set(["real"])
+        else:
+            assert False
+
 
 BUILTIN_BOOLEAN = Sort("Bool")
 BUILTIN_INTEGER = Sort("Int")
@@ -173,7 +218,7 @@ class Expression(Node, metaclass=ABCMeta):
     def __init__(self, sort):
         assert isinstance(sort, Sort)
 
-        self.sort    = sort
+        self.sort = sort
 
     def is_static(self):
         return False
@@ -183,6 +228,9 @@ class Expression(Node, metaclass=ABCMeta):
 
     def is_static_false(self):
         return False
+
+    def get_required_logics(self):
+        return self.sort.get_required_logics()
 
     @abstractmethod
     def tr_smtlib(self):
@@ -212,6 +260,12 @@ class Constant_Declaration(Statement):
 
         self.symbol = symbol
         self.value  = value
+
+    def get_required_logics(self):
+        logics = self.symbol.get_required_logics()
+        if self.value is not None:
+            logics |= self.value.get_required_logics()
+        return logics
 
     def write_smtlib(self, fd):
         assert isinstance(fd, TextIOBase)
@@ -245,6 +299,9 @@ class Assertion(Statement):
         assert expression.sort is BUILTIN_BOOLEAN
 
         self.expression = expression
+
+    def get_required_logics(self):
+        return self.expression.get_required_logics()
 
     def write_smtlib(self, fd):
         assert isinstance(fd, TextIOBase)
