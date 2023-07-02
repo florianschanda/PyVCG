@@ -22,6 +22,8 @@
 ##                                                                          ##
 ##############################################################################
 
+import html
+
 from pyvcg import smt
 
 
@@ -30,6 +32,24 @@ class DAG:
         self.node_id = -1
         self.nodes = []
         self.start = None
+
+    def debug_render_dot(self):
+        dot = ["digraph {"]
+        for node in self.nodes:
+            writer = smt.SMTLIB_Generator()
+            for item in node.items:
+                item.walk(writer)
+
+            label = "<b>%s</b><br/>" % node.__class__.__name__
+            label += "<br/>".join(map(html.escape, writer.lines))
+
+            dot.append("  %u [label=<%s>]" % (node.node_id, label))
+        for node_src in self.nodes:
+            for node_dst in node_src.outgoing:
+                dot.append("  %u -> %u" % (node_src.node_id,
+                                           node_dst.node_id))
+        dot.append("}")
+        return "\n".join(dot)
 
     def register_node(self, node):
         assert isinstance(node, Node)

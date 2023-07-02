@@ -23,6 +23,16 @@ class SimpleVCG(unittest.TestCase):
 
         for filename in glob.glob("tests/SimpleVCG_Output/%s_*.smt2"):
             os.system("git rm %s" % filename)
+
+        filename = "tests/SimpleVCG_Output/%s.dot" % basename
+        with open(filename, "w", encoding="UTF-8") as fd:
+            fd.write(self.graph.debug_render_dot())
+            fd.write("\n")
+        os.system("git add %s" % filename)
+        os.system("dot -Tpdf %s -o %s" % (filename,
+                                          filename.replace(".dot",
+                                                           ".pdf")))
+
         for vc_id, vc in enumerate(self.vcg.vcs, 1):
             filename = "tests/SimpleVCG_Output/%s_%04u.smt2" % (basename,
                                                                 vc_id)
