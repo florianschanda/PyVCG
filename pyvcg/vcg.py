@@ -22,8 +22,6 @@
 ##                                                                          ##
 ##############################################################################
 
-from io import StringIO
-
 from pyvcg import smt
 from pyvcg import graph
 
@@ -35,16 +33,10 @@ class VCG:
         self.vcs   = []
 
     def build_sub_vc(self, statements):
-        vc = {
-            "smtlib" : smt.SMTLIB_Context(StringIO()),
-            "api"    : smt.CVC5_Context(),
-        }
+        script = smt.Script()
         for statement in statements:
-            vc["smtlib"].add_statement(statement)
-            vc["api"].add_statement(statement)
-        vc["smtlib"].generate()
-        vc["api"].generate()
-        self.vcs.append(vc)
+            script.add_statement(statement)
+        self.vcs.append(script)
 
     def build_vc(self, full_path):
         path, goal_node = full_path[:-1], full_path[-1]

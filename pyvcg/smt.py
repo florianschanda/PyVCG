@@ -23,112 +23,21 @@
 ##############################################################################
 
 from abc import ABCMeta, abstractmethod
-from io import TextIOBase
 import re
 
 import cvc5
 
 
 ##############################################################################
-# Helper functions
+# Abstract Visitors
 ##############################################################################
 
-def escape(name):
-    assert isinstance(name, str) and "|" not in name
-    if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
-        return name
-    else:
-        return "|%s|" % name
-
-
-class Context(metaclass=ABCMeta):
-    def __init__(self):
-        self.relevant_values = []
-        self.statements      = []
-        self.logic_visitor   = Logic_Visitor()
-        self.logics          = set()
-
-    def add_statement(self, statement):
-        assert isinstance(statement, Statement)
-        self.statements.append(statement)
-        if isinstance(statement, Constant_Declaration) and \
-           statement.is_relevant:
-            self.relevant_values.append(statement.symbol)
-        statement.walk(self.logic_visitor)
-
-    @abstractmethod
-    def generate(self):
-        pass
-
-    @abstractmethod
-    def get_status(self):
-        pass
-
-
-class CVC5_Context(Context):
-    def __init__(self):
-        super().__init__()
-        self.solver = cvc5.Solver()
-
-        self.mapping = {}
-        self.values  = {}
-
-    def generate(self):
-        self.solver.setOption("produce-models", "true")
-        self.solver.setLogic(self.logic_visitor.get_logic_string())
-        for statement in self.statements:
-            statement.write_cvc5(self)
-
-    def get_status(self):
-        result = self.solver.checkSat()
-        if result.isSat():
-            for constant in self.relevant_values:
-                value = self.solver.getValue(constant.tr_cvc5(self))
-                if constant.sort.name == "Bool":
-                    self.values[constant.name] = value.getBooleanValue()
-                elif constant.sort.name == "Int":
-                    self.values[constant.name] = value.getIntegerValue()
-                elif constant.sort.name == "Real":
-                    self.values[constant.name] = value.getRealValue()
-                else:  # pragma: no cover
-                    assert False
-            return "sat"
-        elif result.isUnsat():
-            return "unsat"
-        else:  # pragma: no cover
-            return "unknown"
-
-
-class SMTLIB_Context(Context):
-    def __init__(self, fd):
-        super().__init__()
-        assert isinstance(fd, TextIOBase)
-        self.fd = fd
-
-    def generate(self):
-        self.write_preamble()
-        for statement in self.statements:
-            statement.write_smtlib(self.fd)
-        self.fd.write("(check-sat)\n")
-        for constant in self.relevant_values:
-            self.fd.write("(get-value (%s))\n" % constant.tr_smtlib())
-
-    def write_preamble(self):
-        self.fd.write("(set-logic %s)\n" %
-                      self.logic_visitor.get_logic_string())
-        self.fd.write("(set-option :produce-models true)\n")
-
-    def get_status(self):  # pragma: no cover
-        pass
-
-
-class Node(metaclass=ABCMeta):
-    @abstractmethod
-    def walk(self, visitor):
-        assert isinstance(visitor, Visitor)
-
-
 class Visitor(metaclass=ABCMeta):
+    @abstractmethod
+    def visit_script(self, node, logic):
+        assert isinstance(node, Script)
+        assert isinstance(logic, str)
+
     @abstractmethod
     def visit_sort(self, node):
         assert isinstance(node, Sort)
@@ -158,12 +67,35 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Boolean_Negation)
 
 
+class VC_Writer(Visitor, metaclass=ABCMeta):
+    pass
+
+
+class VC_Solver(Visitor, metaclass=ABCMeta):
+    @abstractmethod
+    def solve(self):
+        pass
+
+    @abstractmethod
+    def get_status(self):
+        pass
+
+    @abstractmethod
+    def get_values(self):
+        pass
+
+
+##############################################################################
+# Concrete Visitors
+##############################################################################
+
 class Logic_Visitor(Visitor):
     def __init__(self):
         self.logics = set()
 
     def get_logic_string(self):
         allowed_logics = set(["quant", "int", "real", "nonlinear"])
+
         assert not self.logics or self.logics < allowed_logics, \
             "%s is not a permitted logic" % (self.logics - allowed_logics)
 
@@ -188,6 +120,11 @@ class Logic_Visitor(Visitor):
 
         return logic
 
+    def visit_script(self, node, logic):  # pragma: no cover
+        assert isinstance(node, Script)
+        assert isinstance(logic, str)
+        assert False
+
     def visit_sort(self, node):
         assert isinstance(node, Sort)
         if node.name == "Bool":
@@ -203,9 +140,9 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Constant_Declaration)
         assert isinstance(tr_symbol, set)
         assert isinstance(tr_value, set) or tr_value is None
-        self.logics |= tr_symbol
         if tr_value is not None:
             self.logics |= tr_value
+        self.logics |= tr_symbol
 
     def visit_assertion(self, node, tr_expression):
         assert isinstance(node, Assertion)
@@ -234,27 +171,238 @@ class Logic_Visitor(Visitor):
         return tr_sort | tr_expression
 
 
+class SMTLIB_Generator(VC_Writer):
+    def __init__(self):
+        self.lines  = []
+        self.values = []
+
+    def emit_comment(self, comment):
+        assert isinstance(comment, str) or comment is None
+        if comment is not None:
+            self.lines.append(";; %s" % comment)
+
+    def emit_name(self, name):
+        assert isinstance(name, str) and "|" not in name
+        if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
+            return name
+        else:
+            return "|%s|" % name
+
+    def visit_script(self, node, logic):
+        assert isinstance(node, Script)
+        assert isinstance(logic, str)
+
+        script = [
+            "(set-logic %s)" % logic,
+            "(set-option :produce-models true)",
+            "",
+        ]
+        for statement in node.statements:
+            statement.walk(self)
+        script += self.lines
+        script.append("(check-sat)")
+        script += self.values
+        script.append("(exit)")
+
+        return "\n".join(script) + "\n"
+
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+        return node.name
+
+    def visit_constant_declaration(self, node, tr_symbol, tr_value):
+        assert isinstance(node, Constant_Declaration)
+        assert isinstance(tr_symbol, str)
+        assert isinstance(tr_value, str) or tr_value is None
+
+        if node.is_relevant:
+            self.values.append("(get-value (%s))" % tr_symbol)
+
+        tr_sort = node.symbol.sort.walk(self)
+        self.emit_comment(node.comment)
+        if tr_value is None:
+            self.lines.append("(declare-const %s %s)" % (tr_symbol, tr_sort))
+        else:
+            self.lines.append("(define-const %s %s %s)" % (tr_symbol,
+                                                           tr_sort,
+                                                           tr_value))
+
+    def visit_assertion(self, node, tr_expression):
+        assert isinstance(node, Assertion)
+        self.emit_comment(node.comment)
+        self.lines.append("(assert %s)" % tr_expression)
+
+    def visit_boolean_literal(self, node, tr_sort):
+        assert isinstance(node, Boolean_Literal)
+        return "true" if node.value else "false"
+
+    def visit_integer_literal(self, node, tr_sort):
+        assert isinstance(node, Integer_Literal)
+        if node.value >= 0:
+            return str(node.value)
+        else:
+            return "(- %u)" % -node.value
+
+    def visit_constant(self, node, tr_sort):
+        assert isinstance(node, Constant)
+        return self.emit_name(node.name)
+
+    def visit_boolean_negation(self, node, tr_sort, tr_expression):
+        assert isinstance(node, Boolean_Negation)
+        return "(not %s)" % tr_expression
+
+
+class CVC5_Solver(VC_Solver):
+    def __init__(self):
+        self.solver  = cvc5.Solver()
+        self.result  = None
+        self.values  = {}
+
+        self.const_mapping = {}
+
+        self.relevant_values = []
+
+    def solve(self):
+        result = self.solver.checkSat()
+        if result.isSat():
+            self.result = "sat"
+        elif result.isUnsat():
+            self.result = "unsat"
+            return
+        else:  # pragma: no cover
+            self.result = "unknown"
+            return
+
+        for constant in self.relevant_values:
+            value = self.solver.getValue(self.const_mapping[constant])
+            if constant.sort.name == "Bool":
+                self.values[constant.name] = value.getBooleanValue()
+            elif constant.sort.name == "Int":
+                self.values[constant.name] = value.getIntegerValue()
+            elif constant.sort.name == "Real":
+                self.values[constant.name] = value.getRealValue()
+            else:  # pragma: no cover
+                assert False
+
+    def get_status(self):
+        assert self.result is not None
+        return self.result
+
+    def get_values(self):
+        assert self.result is not None
+        return self.values
+
+    def visit_script(self, node, logic):
+        assert isinstance(node, Script)
+        assert isinstance(logic, str)
+
+        self.solver.setOption("produce-models", "true")
+        self.solver.setLogic(logic)
+
+        for statement in node.statements:
+            statement.walk(self)
+
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+
+        if node.name == "Bool":
+            return self.solver.getBooleanSort()
+        elif node.name == "Int":
+            return self.solver.getIntegerSort()
+        elif node.name == "Real":
+            return self.solver.getRealSort()
+        else:
+            assert False
+
+    def visit_constant_declaration(self, node, tr_symbol, tr_value):
+        assert isinstance(node, Constant_Declaration)
+        assert node.symbol in self.const_mapping
+
+        if tr_value is not None:
+            self.solver.assertFormula(
+                self.solver.mkTerm(cvc5.Kind.EQUAL, tr_symbol, tr_value))
+
+        if node.is_relevant:
+            self.relevant_values.append(node.symbol)
+
+    def visit_assertion(self, node, tr_expression):
+        assert isinstance(node, Assertion)
+
+        self.solver.assertFormula(tr_expression)
+
+    def visit_boolean_literal(self, node, tr_sort):
+        assert isinstance(node, Boolean_Literal)
+
+        return self.solver.mkBoolean(node.value)
+
+    def visit_integer_literal(self, node, tr_sort):
+        assert isinstance(node, Integer_Literal)
+
+        return self.solver.mkInteger(node.value)
+
+    def visit_constant(self, node, tr_sort):
+        assert isinstance(node, Constant)
+
+        if node not in self.const_mapping:
+            self.const_mapping[node] = self.solver.mkConst(tr_sort, node.name)
+
+        return self.const_mapping[node]
+
+    def visit_boolean_negation(self, node, tr_sort, tr_expression):
+        assert isinstance(node, Boolean_Negation)
+
+        return tr_expression.notTerm()
+
+
+##############################################################################
+# SMTLIB
+##############################################################################
+
+class Node(metaclass=ABCMeta):
+    @abstractmethod
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+
+
 ##############################################################################
 # Top-level items
 ##############################################################################
+
+class Script(Node):
+    def __init__(self):
+        self.statements      = []
+        self.relevant_values = []
+        self.logic           = Logic_Visitor()
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_script(self,
+                                    self.logic.get_logic_string())
+
+    def add_statement(self, statement):
+        assert isinstance(statement, Statement)
+        self.statements.append(statement)
+        statement.walk(self.logic)
+
+        if isinstance(statement, Constant_Declaration) and \
+           statement.is_relevant:
+            self.relevant_values.append(statement.symbol)
+
+    def generate_vc(self, visitor):
+        assert isinstance(visitor, VC_Writer)
+        return self.walk(visitor)
+
+    def solve_vc(self, visitor):
+        assert isinstance(visitor, VC_Solver)
+        self.walk(visitor)
+        visitor.solve()
+        return visitor.get_status(), visitor.get_values()
+
 
 class Statement(Node, metaclass=ABCMeta):
     def __init__(self, comment):
         assert isinstance(comment, str) or comment is None
         self.comment = comment
-
-    def write_smtlib_comment(self, fd):
-        assert isinstance(fd, TextIOBase)
-        if self.comment is not None:
-            fd.write(";; %s\n" % self.comment)
-
-    @abstractmethod
-    def write_smtlib(self, fd):
-        assert isinstance(fd, TextIOBase)
-
-    @abstractmethod
-    def write_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
 
 
 class Sort(Node):
@@ -266,21 +414,6 @@ class Sort(Node):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_sort(self)
-
-    def tr_smtlib(self):
-        return escape(self.name)
-
-    def tr_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        if self.name == "Bool":
-            return context.solver.getBooleanSort()
-        elif self.name == "Int":
-            return context.solver.getIntegerSort()
-        elif self.name == "Real":
-            return context.solver.getRealSort()
-        else:
-            assert False
 
 
 BUILTIN_BOOLEAN = Sort("Bool")
@@ -302,20 +435,6 @@ class Expression(Node, metaclass=ABCMeta):
 
     def is_static_false(self):
         return False
-
-    @abstractmethod
-    def tr_smtlib(self):
-        pass
-
-    def tr_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-        if self not in context.mapping:
-            context.mapping[self] = self.gen_cvc5(context)
-        return context.mapping[self]
-
-    @abstractmethod
-    def gen_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
 
 
 ##############################################################################
@@ -343,30 +462,6 @@ class Constant_Declaration(Statement):
             tr_value = self.value.walk(visitor)
         return visitor.visit_constant_declaration(self, tr_symbol, tr_value)
 
-    def write_smtlib(self, fd):
-        assert isinstance(fd, TextIOBase)
-
-        self.write_smtlib_comment(fd)
-        if self.value is not None:
-            fd.write("(define-const")
-        else:
-            fd.write("(declare-const")
-        fd.write(" %s" % self.symbol.tr_smtlib())
-        fd.write(" %s" % self.symbol.sort.tr_smtlib())
-        if self.value is not None:
-            fd.write(" %s" % self.value.tr_smtlib())
-        fd.write(")\n")
-
-    def write_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        sym = self.symbol.tr_cvc5(context)
-
-        if self.value is not None:
-            value = self.value.tr_cvc5(context)
-            context.solver.assertFormula(
-                context.solver.mkTerm(cvc5.Kind.EQUAL, sym, value))
-
 
 class Assertion(Statement):
     def __init__(self, expression, comment=None):
@@ -379,18 +474,6 @@ class Assertion(Statement):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_assertion(self, self.expression.walk(visitor))
-
-    def write_smtlib(self, fd):
-        assert isinstance(fd, TextIOBase)
-
-        self.write_smtlib_comment(fd)
-        fd.write("(assert %s)\n" % self.expression.tr_smtlib())
-
-    def write_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        expr = self.expression.tr_cvc5(context)
-        context.solver.assertFormula(expr)
 
 
 ##############################################################################
@@ -419,14 +502,6 @@ class Boolean_Literal(Literal):
     def is_static_false(self):
         return not self.value
 
-    def tr_smtlib(self):
-        return "true" if self.value else "false"
-
-    def gen_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        return context.solver.mkBoolean(self.value)
-
 
 class Integer_Literal(Literal):
     def __init__(self, value):
@@ -439,17 +514,6 @@ class Integer_Literal(Literal):
         assert isinstance(visitor, Visitor)
         return visitor.visit_integer_literal(self, self.sort.walk(visitor))
 
-    def tr_smtlib(self):
-        if self.value >= 0:
-            return str(self.value)
-        else:
-            return "(- %u)" % -self.value
-
-    def gen_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        return context.solver.mkInteger(self.value)
-
 
 class Constant(Expression):
     def __init__(self, sort, name):
@@ -460,15 +524,6 @@ class Constant(Expression):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_constant(self, self.sort.walk(visitor))
-
-    def tr_smtlib(self):
-        return escape(self.name)
-
-    def gen_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        sort = self.sort.tr_cvc5(context)
-        return context.solver.mkConst(sort, self.name)
 
 
 class Boolean_Negation(Expression):
@@ -483,11 +538,3 @@ class Boolean_Negation(Expression):
         return visitor.visit_boolean_negation(self,
                                               self.sort.walk(visitor),
                                               self.expression.walk(visitor))
-
-    def tr_smtlib(self):
-        return "(not %s)" % self.expression.tr_smtlib()
-
-    def gen_cvc5(self, context):
-        assert isinstance(context, CVC5_Context)
-
-        return self.expression.tr_cvc5(context).notTerm()

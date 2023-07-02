@@ -29,12 +29,13 @@ class SimpleVCG(unittest.TestCase):
             with open(filename,
                       "w",
                       encoding="UTF-8") as fd:
-                fd.write(vc["smtlib"].fd.getvalue())
+                fd.write(vc.generate_vc(smt.SMTLIB_Generator()))
                 fd.write("\n")
-                fd.write(";; result = %s\n" % vc["api"].get_status())
-                if vc["api"].values:
+                status, values = vc.solve_vc(smt.CVC5_Solver())
+                fd.write(";; result = %s\n" % status)
+                if values:
                     fd.write(";;\n")
-                for name, value in vc["api"].values.items():
+                for name, value in values.items():
                     fd.write(";; %s = %s\n" % (name, value))
             os.system("git add %s" % filename)
 
