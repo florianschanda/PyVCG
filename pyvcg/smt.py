@@ -45,33 +45,8 @@ class Context(metaclass=ABCMeta):
     def __init__(self):
         self.relevant_values = []
         self.statements      = []
+        self.logic_visitor   = Logic_Visitor()
         self.logics          = set()
-
-    def get_logic(self):
-        allowed_logics = set(["quant", "int", "real", "nonlinear"])
-        assert not self.logics or self.logics < allowed_logics, \
-            "%s is not a permitted logic" % (self.logics - allowed_logics)
-
-        if "quant" in self.logics:  # pragma: no cover
-            logic = ""
-        else:
-            logic = "QF_"
-
-        logic += "UF"
-
-        if "int" in self.logics or \
-           "real" in self.logics:
-            if "nonlinear" in self.logics:  # pragma: no cover
-                logic += "N"
-            else:
-                logic += "L"
-            if "int" in self.logics:
-                logic += "I"
-            if "real" in self.logics:
-                logic += "R"
-            logic += "A"
-
-        return logic
 
     def add_statement(self, statement):
         assert isinstance(statement, Statement)
@@ -79,7 +54,7 @@ class Context(metaclass=ABCMeta):
         if isinstance(statement, Constant_Declaration) and \
            statement.is_relevant:
             self.relevant_values.append(statement.symbol)
-        self.logics |= statement.get_required_logics()
+        statement.walk(self.logic_visitor)
 
     @abstractmethod
     def generate(self):
@@ -100,7 +75,7 @@ class CVC5_Context(Context):
 
     def generate(self):
         self.solver.setOption("produce-models", "true")
-        self.solver.setLogic(self.get_logic())
+        self.solver.setLogic(self.logic_visitor.get_logic_string())
         for statement in self.statements:
             statement.write_cvc5(self)
 
@@ -139,7 +114,8 @@ class SMTLIB_Context(Context):
             self.fd.write("(get-value (%s))\n" % constant.tr_smtlib())
 
     def write_preamble(self):
-        self.fd.write("(set-logic %s)\n" % self.get_logic())
+        self.fd.write("(set-logic %s)\n" %
+                      self.logic_visitor.get_logic_string())
         self.fd.write("(set-option :produce-models true)\n")
 
     def get_status(self):  # pragma: no cover
@@ -148,8 +124,114 @@ class SMTLIB_Context(Context):
 
 class Node(metaclass=ABCMeta):
     @abstractmethod
-    def get_required_logics(self):
-        return set()
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+
+
+class Visitor(metaclass=ABCMeta):
+    @abstractmethod
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+
+    @abstractmethod
+    def visit_constant_declaration(self, node, tr_symbol, tr_value):
+        assert isinstance(node, Constant_Declaration)
+
+    @abstractmethod
+    def visit_assertion(self, node, tr_expression):
+        assert isinstance(node, Assertion)
+
+    @abstractmethod
+    def visit_boolean_literal(self, node, tr_sort):
+        assert isinstance(node, Boolean_Literal)
+
+    @abstractmethod
+    def visit_integer_literal(self, node, tr_sort):
+        assert isinstance(node, Integer_Literal)
+
+    @abstractmethod
+    def visit_constant(self, node, tr_sort):
+        assert isinstance(node, Constant)
+
+    @abstractmethod
+    def visit_boolean_negation(self, node, tr_sort, tr_expression):
+        assert isinstance(node, Boolean_Negation)
+
+
+class Logic_Visitor(Visitor):
+    def __init__(self):
+        self.logics = set()
+
+    def get_logic_string(self):
+        allowed_logics = set(["quant", "int", "real", "nonlinear"])
+        assert not self.logics or self.logics < allowed_logics, \
+            "%s is not a permitted logic" % (self.logics - allowed_logics)
+
+        if "quant" in self.logics:  # pragma: no cover
+            logic = ""
+        else:
+            logic = "QF_"
+
+        logic += "UF"
+
+        if "int" in self.logics or \
+           "real" in self.logics:
+            if "nonlinear" in self.logics:  # pragma: no cover
+                logic += "N"
+            else:
+                logic += "L"
+            if "int" in self.logics:
+                logic += "I"
+            if "real" in self.logics:
+                logic += "R"
+            logic += "A"
+
+        return logic
+
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+        if node.name == "Bool":
+            return set()
+        elif node.name == "Int":
+            return {"int"}
+        elif node.name == "Real":
+            return {"real"}
+        else:
+            assert False, "unexpected base sort %s" % node.name
+
+    def visit_constant_declaration(self, node, tr_symbol, tr_value):
+        assert isinstance(node, Constant_Declaration)
+        assert isinstance(tr_symbol, set)
+        assert isinstance(tr_value, set) or tr_value is None
+        self.logics |= tr_symbol
+        if tr_value is not None:
+            self.logics |= tr_value
+
+    def visit_assertion(self, node, tr_expression):
+        assert isinstance(node, Assertion)
+        assert isinstance(tr_expression, set)
+        self.logics |= tr_expression
+
+    def visit_boolean_literal(self, node, tr_sort):
+        assert isinstance(node, Boolean_Literal)
+        assert isinstance(tr_sort, set)
+        return tr_sort
+
+    def visit_integer_literal(self, node, tr_sort):
+        assert isinstance(node, Integer_Literal)
+        assert isinstance(tr_sort, set)
+        return tr_sort
+
+    def visit_constant(self, node, tr_sort):
+        assert isinstance(node, Constant)
+        assert isinstance(tr_sort, set)
+        return tr_sort
+
+    def visit_boolean_negation(self, node, tr_sort, tr_expression):
+        assert isinstance(node, Boolean_Negation)
+        assert isinstance(tr_sort, set)
+        assert isinstance(tr_expression, set)
+        return tr_sort | tr_expression
 
 
 ##############################################################################
@@ -181,6 +263,10 @@ class Sort(Node):
 
         self.name = name
 
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_sort(self)
+
     def tr_smtlib(self):
         return escape(self.name)
 
@@ -193,16 +279,6 @@ class Sort(Node):
             return context.solver.getIntegerSort()
         elif self.name == "Real":
             return context.solver.getRealSort()
-        else:
-            assert False
-
-    def get_required_logics(self):
-        if self.name == "Bool":
-            return set()
-        elif self.name == "Int":
-            return set(["int"])
-        elif self.name == "Real":
-            return set(["real"])
         else:
             assert False
 
@@ -226,9 +302,6 @@ class Expression(Node, metaclass=ABCMeta):
 
     def is_static_false(self):
         return False
-
-    def get_required_logics(self):
-        return self.sort.get_required_logics()
 
     @abstractmethod
     def tr_smtlib(self):
@@ -261,11 +334,14 @@ class Constant_Declaration(Statement):
         self.value       = value
         self.is_relevant = relevant
 
-    def get_required_logics(self):
-        logics = self.symbol.get_required_logics()
-        if self.value is not None:
-            logics |= self.value.get_required_logics()
-        return logics
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_symbol = self.symbol.walk(visitor)
+        if self.value is None:
+            tr_value = None
+        else:
+            tr_value = self.value.walk(visitor)
+        return visitor.visit_constant_declaration(self, tr_symbol, tr_value)
 
     def write_smtlib(self, fd):
         assert isinstance(fd, TextIOBase)
@@ -300,8 +376,9 @@ class Assertion(Statement):
 
         self.expression = expression
 
-    def get_required_logics(self):
-        return self.expression.get_required_logics()
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_assertion(self, self.expression.walk(visitor))
 
     def write_smtlib(self, fd):
         assert isinstance(fd, TextIOBase)
@@ -332,6 +409,10 @@ class Boolean_Literal(Literal):
 
         self.value = value
 
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_boolean_literal(self, self.sort.walk(visitor))
+
     def is_static_true(self):
         return self.value
 
@@ -354,6 +435,10 @@ class Integer_Literal(Literal):
 
         self.value = value
 
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_integer_literal(self, self.sort.walk(visitor))
+
     def tr_smtlib(self):
         if self.value >= 0:
             return str(self.value)
@@ -372,6 +457,10 @@ class Constant(Expression):
         assert isinstance(name, str) and "|" not in name
         self.name = name
 
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_constant(self, self.sort.walk(visitor))
+
     def tr_smtlib(self):
         return escape(self.name)
 
@@ -389,6 +478,12 @@ class Boolean_Negation(Expression):
 
         self.expression = expression
 
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_boolean_negation(self,
+                                              self.sort.walk(visitor),
+                                              self.expression.walk(visitor))
+
     def tr_smtlib(self):
         return "(not %s)" % self.expression.tr_smtlib()
 
@@ -396,6 +491,3 @@ class Boolean_Negation(Expression):
         assert isinstance(context, CVC5_Context)
 
         return self.expression.tr_cvc5(context).notTerm()
-
-    def get_required_logics(self):
-        return self.expression.get_required_logics()
