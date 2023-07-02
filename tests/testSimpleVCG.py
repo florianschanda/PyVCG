@@ -62,7 +62,38 @@ class SimpleVCG(unittest.TestCase):
         n2.add_goal(potato)
         n2.add_goal(potato)
 
-        for vc in self.vcg.vcs:
-            print(vc["smtlib"].fd.getvalue())
-
         self.writeExpectedOutput("trivial_flat")
+
+    def test_trivial_paths(self):
+        n1 = graph.Assumption(self.graph)
+        myvar = smt.Constant(smt.BUILTIN_INTEGER, "x")
+        n1.add_statement(smt.Constant_Declaration(myvar, relevant=True))
+        self.graph.start.add_edge_to(n1)
+
+        n2 = graph.Assumption(self.graph)
+        n2.add_statement(smt.Assertion(smt.Comparison(">",
+                                                      myvar,
+                                                      smt.Integer_Literal(5))))
+        n1.add_edge_to(n2)
+
+        n3 = graph.Assumption(self.graph)
+        n3.add_statement(smt.Assertion(smt.Comparison(">",
+                                                      myvar,
+                                                      smt.Integer_Literal(1))))
+        n1.add_edge_to(n3)
+
+        n4 = graph.Check(self.graph)
+        n4.add_goal(
+            smt.Boolean_Negation(
+                smt.Comparison("=",
+                               myvar,
+                               smt.Integer_Literal(0))))
+        n4.add_goal(
+            smt.Boolean_Negation(
+                smt.Comparison("=",
+                               myvar,
+                               smt.Integer_Literal(3))))
+        n2.add_edge_to(n4)
+        n3.add_edge_to(n4)
+
+        self.writeExpectedOutput("trivial_paths")

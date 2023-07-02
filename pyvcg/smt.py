@@ -66,6 +66,10 @@ class Visitor(metaclass=ABCMeta):
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
 
+    @abstractmethod
+    def visit_comparison(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Comparison)
+
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
     pass
@@ -170,6 +174,10 @@ class Logic_Visitor(Visitor):
         assert isinstance(tr_expression, set)
         return tr_sort | tr_expression
 
+    def visit_comparison(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Comparison)
+        return tr_lhs | tr_rhs
+
 
 class SMTLIB_Generator(VC_Writer):
     def __init__(self):
@@ -250,6 +258,11 @@ class SMTLIB_Generator(VC_Writer):
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
         return "(not %s)" % tr_expression
+
+    def visit_comparison(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Comparison)
+
+        return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
 
 
 class CVC5_Solver(VC_Solver):
@@ -352,6 +365,17 @@ class CVC5_Solver(VC_Solver):
         assert isinstance(node, Boolean_Negation)
 
         return tr_expression.notTerm()
+
+    def visit_comparison(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Comparison)
+
+        kind = {"<"  : cvc5.Kind.LT,
+                "<=" : cvc5.Kind.LEQ,
+                ">"  : cvc5.Kind.GT,
+                ">=" : cvc5.Kind.GEQ,
+                "="  : cvc5.Kind.EQUAL}
+
+        return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
 
 
 ##############################################################################
@@ -480,6 +504,10 @@ class Assertion(Statement):
 # Expressions
 ##############################################################################
 
+##############################################################################
+# Literals and constants
+##############################################################################
+
 class Literal(Expression, metaclass=ABCMeta):
     def is_static(self):
         return True
@@ -526,6 +554,10 @@ class Constant(Expression):
         return visitor.visit_constant(self, self.sort.walk(visitor))
 
 
+##############################################################################
+# Boolean terms
+##############################################################################
+
 class Boolean_Negation(Expression):
     def __init__(self, expression):
         assert isinstance(expression, Expression)
@@ -538,3 +570,26 @@ class Boolean_Negation(Expression):
         return visitor.visit_boolean_negation(self,
                                               self.sort.walk(visitor),
                                               self.expression.walk(visitor))
+
+
+##############################################################################
+# Comparisons
+##############################################################################
+
+class Comparison(Expression):
+    def __init__(self, operator, lhs, rhs):
+        assert operator in ("<", ">", "<=", ">=", "=")
+        assert isinstance(lhs, Expression)
+        assert isinstance(rhs, Expression)
+        assert lhs.sort is rhs.sort
+        super().__init__(BUILTIN_BOOLEAN)
+
+        self.operator = operator
+        self.lhs      = lhs
+        self.rhs      = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_lhs = self.lhs.walk(visitor)
+        tr_rhs = self.rhs.walk(visitor)
+        return visitor.visit_comparison(self, tr_lhs, tr_rhs)
