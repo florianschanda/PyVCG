@@ -179,3 +179,80 @@ class SMTBasicTests(unittest.TestCase):
             """
         )
         self.assertIsInstance(self.values.get("potato", None), Fraction)
+
+    def test_Simple_Int_Nonlinear_Arithmetic(self):
+        sym_x = smt.Constant(smt.BUILTIN_INTEGER, "x")
+        sym_y = smt.Constant(smt.BUILTIN_INTEGER, "y")
+        decl = smt.Constant_Declaration(sym_x, relevant=True)
+        self.script.add_statement(decl)
+        decl = smt.Constant_Declaration(sym_y, relevant=True)
+        self.script.add_statement(decl)
+
+        self.script.add_statement(smt.Assertion(
+            smt.Comparison(">=", sym_x, smt.Integer_Literal(1))))
+        self.script.add_statement(smt.Assertion(
+            smt.Comparison(">=", sym_y, smt.Integer_Literal(1))))
+        self.script.add_statement(smt.Assertion(
+            smt.Comparison("=",
+                           smt.Binary_Int_Arithmetic_Op("*", sym_x, sym_y),
+                           smt.Integer_Literal(33))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFNIA)
+            (set-option :produce-models true)
+
+            (declare-const x Int)
+            (declare-const y Int)
+            (assert (>= x 1))
+            (assert (>= y 1))
+            (assert (= (* x y) 33))
+            (check-sat)
+            (get-value (x))
+            (get-value (y))
+            (exit)
+            """
+        )
+
+        self.assertEqual(self.values.get("x", 0) * self.values.get("y", 0), 33)
+
+    def test_Simple_Int_Linear_Arithmetic(self):
+        sym_x = smt.Constant(smt.BUILTIN_INTEGER, "x")
+        sym_y = smt.Constant(smt.BUILTIN_INTEGER, "y")
+        decl = smt.Constant_Declaration(sym_x, relevant=True)
+        self.script.add_statement(decl)
+        decl = smt.Constant_Declaration(sym_y, relevant=True)
+        self.script.add_statement(decl)
+
+        self.script.add_statement(smt.Assertion(
+            smt.Comparison(">=", sym_x, smt.Integer_Literal(1))))
+        self.script.add_statement(smt.Assertion(
+            smt.Comparison(">=", sym_y, smt.Integer_Literal(1))))
+        self.script.add_statement(smt.Assertion(
+            smt.Comparison(
+                "=",
+                sym_x,
+                smt.Binary_Int_Arithmetic_Op("*",
+                                             sym_y,
+                                             smt.Integer_Literal(5)))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFLIA)
+            (set-option :produce-models true)
+
+            (declare-const x Int)
+            (declare-const y Int)
+            (assert (>= x 1))
+            (assert (>= y 1))
+            (assert (= x (* y 5)))
+            (check-sat)
+            (get-value (x))
+            (get-value (y))
+            (exit)
+            """
+        )
+
+        self.assertEqual(self.values.get("x", 0), self.values.get("y", 0) * 5)

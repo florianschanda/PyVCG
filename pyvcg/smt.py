@@ -70,6 +70,10 @@ class Visitor(metaclass=ABCMeta):
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
 
+    @abstractmethod
+    def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Int_Arithmetic_Op)
+
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
     pass
@@ -178,6 +182,17 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Comparison)
         return tr_lhs | tr_rhs
 
+    def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Int_Arithmetic_Op)
+        nonlinear = node.operator in ("+", "-") or \
+            (node.operator == "*" and (node.lhs.is_static() or
+                                       node.rhs.is_static())) or \
+            (node.lhs.is_static() and node.rhs.is_static())
+        if nonlinear:
+            return tr_lhs | tr_rhs
+        else:
+            return {"nonlinear"} | tr_lhs | tr_rhs
+
 
 class SMTLIB_Generator(VC_Writer):
     def __init__(self):
@@ -261,6 +276,11 @@ class SMTLIB_Generator(VC_Writer):
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
+
+        return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
+
+    def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Int_Arithmetic_Op)
 
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
 
@@ -374,6 +394,17 @@ class CVC5_Solver(VC_Solver):
                 ">"  : cvc5.Kind.GT,
                 ">=" : cvc5.Kind.GEQ,
                 "="  : cvc5.Kind.EQUAL}
+
+        return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
+
+    def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Int_Arithmetic_Op)
+
+        kind = {"+"    : cvc5.Kind.ADD,
+                "-"    : cvc5.Kind.SUB,
+                "*"    : cvc5.Kind.MULT,
+                "div"  : cvc5.Kind.INTS_DIVISION,
+                "mod"  : cvc5.Kind.INTS_MODULUS}
 
         return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
 
@@ -593,3 +624,27 @@ class Comparison(Expression):
         tr_lhs = self.lhs.walk(visitor)
         tr_rhs = self.rhs.walk(visitor)
         return visitor.visit_comparison(self, tr_lhs, tr_rhs)
+
+
+##############################################################################
+# Arithmetic
+##############################################################################
+
+class Binary_Int_Arithmetic_Op(Expression):
+    def __init__(self, operator, lhs, rhs):
+        assert operator in ("+", "-", "*", "div", "mod")
+        assert isinstance(lhs, Expression)
+        assert isinstance(rhs, Expression)
+        assert lhs.sort.name == "Int"
+        assert lhs.sort is rhs.sort
+        super().__init__(lhs.sort)
+
+        self.operator = operator
+        self.lhs      = lhs
+        self.rhs      = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_lhs = self.lhs.walk(visitor)
+        tr_rhs = self.rhs.walk(visitor)
+        return visitor.visit_binary_int_arithmetic_op(self, tr_lhs, tr_rhs)
