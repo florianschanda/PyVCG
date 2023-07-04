@@ -39,9 +39,9 @@ class SimpleVCG(unittest.TestCase):
             with open(filename,
                       "w",
                       encoding="UTF-8") as fd:
-                fd.write(vc.generate_vc(smt.SMTLIB_Generator()))
+                fd.write(vc["script"].generate_vc(smt.SMTLIB_Generator()))
                 fd.write("\n")
-                status, values = vc.solve_vc(smt.CVC5_Solver())
+                status, values = vc["script"].solve_vc(smt.CVC5_Solver())
                 fd.write(";; result = %s\n" % status)
                 if values:
                     fd.write(";;\n")
@@ -59,8 +59,8 @@ class SimpleVCG(unittest.TestCase):
         n2 = graph.Check(self.graph)
         n1.add_edge_to(n2)
 
-        n2.add_goal(potato)
-        n2.add_goal(potato)
+        n2.add_goal(potato, comment = "first attempt")
+        n2.add_goal(potato, comment = "second attempt")
 
         self.writeExpectedOutput("trivial_flat")
 

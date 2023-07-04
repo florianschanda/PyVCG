@@ -37,8 +37,15 @@ class DAG:
         dot = ["digraph {"]
         for node in self.nodes:
             writer = smt.SMTLIB_Generator()
-            for item in node.items:
-                item.walk(writer)
+            if isinstance(node, Check):
+                for check in node.goals:
+                    if check["comment"]:
+                        writer.lines.append(";; %s" % check["comment"])
+                    writer.lines.append("goal: %s" %
+                                        check["goal"].walk(writer))
+            else:
+                for item in node.items:
+                    item.walk(writer)
 
             label = "<b>%s</b><br/>" % node.__class__.__name__
             label += "<br/>".join(map(html.escape, writer.lines))
@@ -139,10 +146,13 @@ class Check(Node):
     def add_statement(self, statement):
         assert False
 
-    def add_goal(self, expression):
+    def add_goal(self, expression, feedback=None, comment=None):
         assert isinstance(expression, smt.Expression)
+        assert isinstance(comment, str) or comment is None
         assert expression.sort is smt.BUILTIN_BOOLEAN
-        self.goals.append(expression)
+        self.goals.append({"goal"     : expression,
+                           "feedback" : feedback,
+                           "comment"  : comment})
         self.items.append(smt.Assertion(expression))
 
 

@@ -1,7 +1,7 @@
 digraph {
   0 [label=<<b>Start</b><br/>>]
   1 [label=<<b>Assumption</b><br/>(declare-const potato Bool)>]
-  2 [label=<<b>Check</b><br/>(assert potato)<br/>(assert potato)>]
+  2 [label=<<b>Check</b><br/>;; first attempt<br/>goal: potato<br/>;; second attempt<br/>goal: potato>]
   0 -> 1
   1 -> 2
 }

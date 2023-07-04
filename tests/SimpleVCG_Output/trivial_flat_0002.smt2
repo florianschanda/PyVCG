@@ -3,6 +3,7 @@
 
 (declare-const potato Bool)
 (assert potato)
+;; second attempt
 (assert (not potato))
 (check-sat)
 (get-value (potato))

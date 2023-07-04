@@ -3,7 +3,7 @@ digraph {
   1 [label=<<b>Assumption</b><br/>(declare-const x Int)>]
   2 [label=<<b>Assumption</b><br/>(assert (&gt; x 5))>]
   3 [label=<<b>Assumption</b><br/>(assert (&gt; x 1))>]
-  4 [label=<<b>Check</b><br/>(assert (not (= x 0)))<br/>(assert (not (= x 3)))>]
+  4 [label=<<b>Check</b><br/>goal: (not (= x 0))<br/>goal: (not (= x 3))>]
   0 -> 1
   1 -> 2
   1 -> 3

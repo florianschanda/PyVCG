@@ -32,11 +32,12 @@ class VCG:
         self.start = graph.Start(self.graph)
         self.vcs   = []
 
-    def build_sub_vc(self, statements):
+    def build_sub_vc(self, statements, feedback):
         script = smt.Script()
         for statement in statements:
             script.add_statement(statement)
-        self.vcs.append(script)
+        self.vcs.append({"script"   : script,
+                         "feedback" : feedback})
 
     def build_vc(self, full_path):
         path, goal_node = full_path[:-1], full_path[-1]
@@ -53,13 +54,15 @@ class VCG:
             statements += proved_goals
 
             # Add goal
-            statements.append(smt.Assertion(smt.Boolean_Negation(goal)))
+            statements.append(
+                smt.Assertion(expression = smt.Boolean_Negation(goal["goal"]),
+                              comment    = goal["comment"]))
 
             # Generate VC
-            self.build_sub_vc(statements)
+            self.build_sub_vc(statements, goal["feedback"])
 
             # Add proven goal to local knowledge
-            proved_goals.append(smt.Assertion(goal))
+            proved_goals.append(smt.Assertion(goal["goal"]))
 
     def generate(self):
         for path in self.graph.all_mapped_paths_to_checks():
