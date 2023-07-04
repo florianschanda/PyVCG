@@ -23,6 +23,8 @@
 ##############################################################################
 
 from abc import ABCMeta, abstractmethod
+from functools import reduce
+import operator as ops
 import re
 
 import cvc5
@@ -65,6 +67,20 @@ class Visitor(metaclass=ABCMeta):
     @abstractmethod
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
+
+    @abstractmethod
+    def visit_conjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Conjunction)
+        assert isinstance(tr_terms, list)
+
+    @abstractmethod
+    def visit_disjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Disjunction)
+        assert isinstance(tr_terms, list)
+
+    @abstractmethod
+    def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Implication)
 
     @abstractmethod
     def visit_comparison(self, node, tr_lhs, tr_rhs):
@@ -178,6 +194,20 @@ class Logic_Visitor(Visitor):
         assert isinstance(tr_expression, set)
         return tr_sort | tr_expression
 
+    def visit_conjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Conjunction)
+        assert isinstance(tr_terms, list)
+        return tr_sort | reduce(ops.__or__, tr_terms, set())
+
+    def visit_disjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Disjunction)
+        assert isinstance(tr_terms, list)
+        return tr_sort | reduce(ops.__or__, tr_terms, set())
+
+    def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Implication)
+        return tr_sort | tr_lhs | tr_rhs
+
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
         return tr_lhs | tr_rhs
@@ -273,6 +303,20 @@ class SMTLIB_Generator(VC_Writer):
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
         return "(not %s)" % tr_expression
+
+    def visit_conjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Conjunction)
+        assert isinstance(tr_terms, list)
+        return "(and %s)" % " ".join(tr_terms)
+
+    def visit_disjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Disjunction)
+        assert isinstance(tr_terms, list)
+        return "(or %s)" % " ".join(tr_terms)
+
+    def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Implication)
+        return "(=> %s %s)" % (tr_lhs, tr_rhs)
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
@@ -385,6 +429,23 @@ class CVC5_Solver(VC_Solver):
         assert isinstance(node, Boolean_Negation)
 
         return tr_expression.notTerm()
+
+    def visit_conjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Conjunction)
+        assert isinstance(tr_terms, list)
+
+        return self.solver.mkTerm(cvc5.Kind.AND, *tr_terms)
+
+    def visit_disjunction(self, node, tr_sort, tr_terms):
+        assert isinstance(node, Disjunction)
+        assert isinstance(tr_terms, list)
+
+        return self.solver.mkTerm(cvc5.Kind.OR, *tr_terms)
+
+    def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Implication)
+
+        return self.solver.mkTerm(cvc5.Kind.IMPLIES, tr_lhs, tr_rhs)
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
@@ -601,6 +662,61 @@ class Boolean_Negation(Expression):
         return visitor.visit_boolean_negation(self,
                                               self.sort.walk(visitor),
                                               self.expression.walk(visitor))
+
+
+class Conjunction(Expression):
+    def __init__(self, *terms):
+        assert isinstance(terms, tuple)
+        assert len(terms) >= 2
+        assert all(isinstance(term, Expression) and
+                   term.sort is BUILTIN_BOOLEAN
+                   for term in terms)
+        super().__init__(BUILTIN_BOOLEAN)
+
+        self.terms = terms
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_terms = [term.walk(visitor) for term in self.terms]
+        return visitor.visit_conjunction(self,
+                                         self.sort.walk(visitor),
+                                         tr_terms)
+
+
+class Disjunction(Expression):
+    def __init__(self, *terms):
+        assert isinstance(terms, tuple)
+        assert len(terms) >= 2
+        assert all(isinstance(term, Expression) and
+                   term.sort is BUILTIN_BOOLEAN
+                   for term in terms)
+        super().__init__(BUILTIN_BOOLEAN)
+
+        self.terms = terms
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_terms = [term.walk(visitor) for term in self.terms]
+        return visitor.visit_disjunction(self,
+                                         self.sort.walk(visitor),
+                                         tr_terms)
+
+
+class Implication(Expression):
+    def __init__(self, lhs, rhs):
+        assert isinstance(lhs, Expression) and lhs.sort is BUILTIN_BOOLEAN
+        assert isinstance(rhs, Expression) and rhs.sort is BUILTIN_BOOLEAN
+        super().__init__(BUILTIN_BOOLEAN)
+
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_implication(self,
+                                         self.sort.walk(visitor),
+                                         self.lhs.walk(visitor),
+                                         self.rhs.walk(visitor))
 
 
 ##############################################################################

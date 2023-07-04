@@ -256,3 +256,43 @@ class SMTBasicTests(unittest.TestCase):
         )
 
         self.assertEqual(self.values.get("x", 0), self.values.get("y", 0) * 5)
+
+    def test_Logical_Connectives(self):
+        sym_a = smt.Constant(smt.BUILTIN_BOOLEAN, "a")
+        sym_b = smt.Constant(smt.BUILTIN_BOOLEAN, "b")
+        sym_c = smt.Constant(smt.BUILTIN_BOOLEAN, "c")
+
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a, relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b, relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_c, relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Conjunction(
+                    smt.Disjunction(sym_a, sym_b),
+                    smt.Disjunction(sym_b, sym_c))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Implication(sym_a, sym_c)))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UF)
+            (set-option :produce-models true)
+
+            (declare-const a Bool)
+            (declare-const b Bool)
+            (declare-const c Bool)
+            (assert (and (or a b) (or b c)))
+            (assert (=> a c))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (get-value (c))
+            (exit)
+            """
+        )
