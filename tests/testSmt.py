@@ -435,7 +435,7 @@ class SMTBasicTests(unittest.TestCase):
         self.script.add_statement(
             smt.Constant_Declaration(
                 sym_result,
-                smt.Binary_Int_Arithmetic_Op("floordiv", sym_a, sym_b),
+                smt.Binary_Int_Arithmetic_Op("floor_div", sym_a, sym_b),
                 relevant=True))
 
         self.assertResult(
@@ -443,14 +443,55 @@ class SMTBasicTests(unittest.TestCase):
             """
             (set-logic QF_UFNIA)
             (set-option :produce-models true)
-            (define-fun floordiv ((lhs Int) (rhs Int)) Int
+            (define-fun floor_div ((lhs Int) (rhs Int)) Int
               (ite (< rhs 0)
                    (div (- lhs) (- rhs))
                    (div lhs rhs)))
 
             (define-const a Int 5)
             (define-const b Int (- 2))
-            (define-const result Int (floordiv a b))
+            (define-const result Int (floor_div a b))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (get-value (result))
+            (exit)
+            """
+        )
+        self.assertValue("result", -3)
+
+    def test_Ada_Remainder(self):
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        sym_b = smt.Constant(smt.BUILTIN_INTEGER, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Integer_Literal(-13),
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Integer_Literal(-5),
+                                     relevant=True))
+
+        sym_result = smt.Constant(smt.BUILTIN_INTEGER, "result")
+        self.script.add_statement(
+            smt.Constant_Declaration(
+                sym_result,
+                smt.Binary_Int_Arithmetic_Op("ada_remainder", sym_a, sym_b),
+                relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFNIA)
+            (set-option :produce-models true)
+            (define-fun ada_remainder ((lhs Int) (rhs Int)) Int
+              (ite (< lhs 0)
+                   (- (mod (- lhs) rhs))
+                   (mod lhs rhs)))
+
+            (define-const a Int (- 13))
+            (define-const b Int (- 5))
+            (define-const result Int (ada_remainder a b))
             (check-sat)
             (get-value (a))
             (get-value (b))

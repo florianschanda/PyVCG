@@ -231,8 +231,8 @@ class Logic_Visitor(Visitor):
             (node.lhs.is_static() and node.rhs.is_static())
         if not linear:
             self.logics.add("nonlinear")
-        if node.operator == "floordiv":
-            self.functions.add("floordiv")
+        if node.operator in ("floor_div", "ada_remainder"):
+            self.functions.add(node.operator)
 
 
 class SMTLIB_Generator(VC_Writer):
@@ -264,11 +264,19 @@ class SMTLIB_Generator(VC_Writer):
             "(set-option :produce-models true)",
         ]
         for function in functions:
-            if function == "floordiv":
-                script.append("(define-fun floordiv ((lhs Int) (rhs Int)) Int")
+            if function == "floor_div":
+                script.append("(define-fun floor_div"
+                              " ((lhs Int) (rhs Int)) Int")
                 script.append("  (ite (< rhs 0)")
                 script.append("       (div (- lhs) (- rhs))")
                 script.append("       (div lhs rhs)))")
+
+            elif function == "ada_remainder":
+                script.append("(define-fun ada_remainder"
+                              " ((lhs Int) (rhs Int)) Int")
+                script.append("  (ite (< lhs 0)")
+                script.append("       (- (mod (- lhs) rhs))")
+                script.append("       (mod lhs rhs)))")
 
             else:
                 assert False
@@ -425,7 +433,7 @@ class CVC5_Solver(VC_Solver):
         self.solver.setLogic(logic)
 
         for function in functions:
-            if function == "floordiv":
+            if function == "floor_div":
                 lhs = self.solver.mkVar(self.solver.getIntegerSort(),
                                         "lhs")
                 rhs = self.solver.mkVar(self.solver.getIntegerSort(),
@@ -445,6 +453,30 @@ class CVC5_Solver(VC_Solver):
                                            self.solver.mkTerm(cvc5.Kind.NEG,
                                                               rhs)),
                         self.solver.mkTerm(cvc5.Kind.INTS_DIVISION,
+                                           lhs,
+                                           rhs)))
+
+            elif function == "ada_remainder":
+                lhs = self.solver.mkVar(self.solver.getIntegerSort(),
+                                        "lhs")
+                rhs = self.solver.mkVar(self.solver.getIntegerSort(),
+                                        "rhs")
+                fun = self.solver.defineFun(
+                    function,
+                    [lhs, rhs],
+                    self.solver.getIntegerSort(),
+                    self.solver.mkTerm(
+                        cvc5.Kind.ITE,
+                        self.solver.mkTerm(cvc5.Kind.LT,
+                                           lhs,
+                                           self.solver.mkInteger(0)),
+                        self.solver.mkTerm(
+                            cvc5.Kind.NEG,
+                            self.solver.mkTerm(
+                                cvc5.Kind.INTS_MODULUS,
+                                self.solver.mkTerm(cvc5.Kind.NEG, lhs),
+                                rhs)),
+                        self.solver.mkTerm(cvc5.Kind.INTS_MODULUS,
                                            lhs,
                                            rhs)))
 
@@ -562,7 +594,7 @@ class CVC5_Solver(VC_Solver):
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
 
-        if node.operator == "floordiv":
+        if node.operator in ("floor_div", "ada_remainder"):
             return self.solver.mkTerm(cvc5.Kind.APPLY_UF,
                                       self.function_mapping[node.operator],
                                       tr_lhs,
@@ -899,7 +931,8 @@ class Comparison(Expression):
 
 class Binary_Int_Arithmetic_Op(Expression):
     def __init__(self, operator, lhs, rhs):
-        assert operator in ("+", "-", "*", "div", "mod", "floordiv")
+        assert operator in ("+", "-", "*", "div", "mod",
+                            "floor_div", "ada_remainder")
         assert isinstance(lhs, Expression)
         assert isinstance(rhs, Expression)
         assert lhs.sort.name == "Int"
