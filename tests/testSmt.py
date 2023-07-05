@@ -501,3 +501,57 @@ class SMTBasicTests(unittest.TestCase):
             """
         )
         self.assertValue("result", -3)
+
+    def test_String_Predicates(self):
+        sym_a = smt.Constant(smt.BUILTIN_STRING, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(">=",
+                               smt.String_Length(sym_a),
+                               smt.Integer_Literal(10))))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.String_Predicate("prefixof",
+                                     smt.String_Literal("foo"),
+                                     sym_a)))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.String_Predicate("suffixof",
+                                     smt.String_Literal("bar"),
+                                     sym_a)))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(
+                    smt.String_Predicate("contains",
+                                         sym_a,
+                                         smt.String_Literal("A")))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFSLIA)
+            (set-option :produce-models true)
+
+            (declare-const a String)
+            (assert (>= (str.len a) 10))
+            (assert (str.prefixof "foo" a))
+            (assert (str.suffixof "bar" a))
+            (assert (not (str.contains a "A")))
+            (check-sat)
+            (get-value (a))
+            (exit)
+            """
+        )
+        self.assertEqual(len(self.values["a"]), 10)
+        self.assertTrue(self.values["a"].startswith("foo"),
+                        self.values["a"])
+        self.assertTrue(self.values["a"].endswith("bar"),
+                        self.values["a"])
+        self.assertNotIn("A", self.values["a"])

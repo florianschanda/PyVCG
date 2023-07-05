@@ -74,6 +74,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Enumeration_Literal)
 
     @abstractmethod
+    def visit_string_literal(self, node, tr_sort):
+        assert isinstance(node, String_Literal)
+
+    @abstractmethod
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
 
@@ -107,6 +111,14 @@ class Visitor(metaclass=ABCMeta):
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
 
+    @abstractmethod
+    def visit_string_length(self, node, tr_string):
+        assert isinstance(node, String_Length)
+
+    @abstractmethod
+    def visit_string_predicate(self, node, tr_first, tr_second):
+        assert isinstance(node, String_Predicate)
+
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
     pass
@@ -137,6 +149,7 @@ class Logic_Visitor(Visitor):
 
     def get_logic_string(self):
         allowed_logics = set(["quant", "int", "real",
+                              "strings", "arrays",
                               "nonlinear", "datatypes"])
 
         assert not self.logics or self.logics < allowed_logics, \
@@ -147,10 +160,16 @@ class Logic_Visitor(Visitor):
         else:
             logic = "QF_"
 
+        if "arrays" in self.logics:  # pragma: no cover
+            logic += "A"
+
         logic += "UF"
 
         if "datatypes" in self.logics:
             logic += "DT"
+
+        if "strings" in self.logics:
+            logic += "S"
 
         if "int" in self.logics or \
            "real" in self.logics:
@@ -190,6 +209,8 @@ class Logic_Visitor(Visitor):
             self.logics.add("int")
         elif node.name == "Real":
             self.logics.add("real")
+        elif node.name == "String":
+            self.logics.add("strings")
         else:
             assert False, "unexpected base sort %s" % node.name
 
@@ -206,6 +227,10 @@ class Logic_Visitor(Visitor):
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, Enumeration_Literal)
         self.logics.add("datatypes")
+
+    def visit_string_literal(self, node, tr_sort):
+        assert isinstance(node, String_Literal)
+        self.logics.add("strings")
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
@@ -240,6 +265,14 @@ class Logic_Visitor(Visitor):
             self.logics.add("nonlinear")
         if node.operator in ("floor_div", "ada_remainder"):
             self.functions.add(node.operator)
+
+    def visit_string_length(self, node, tr_string):
+        assert isinstance(node, String_Length)
+        self.logics.add("strings")
+
+    def visit_string_predicate(self, node, tr_first, tr_second):
+        assert isinstance(node, String_Predicate)
+        self.logics.add("strings")
 
 
 class SMTLIB_Generator(VC_Writer):
@@ -351,6 +384,10 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Enumeration_Literal)
         return "(as %s %s)" % (node.value, tr_sort)
 
+    def visit_string_literal(self, node, tr_sort):
+        assert isinstance(node, String_Literal)
+        return '"%s"' % node.value
+
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
         return self.emit_name(node.name)
@@ -384,6 +421,14 @@ class SMTLIB_Generator(VC_Writer):
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
+
+    def visit_string_length(self, node, tr_string):
+        assert isinstance(node, String_Length)
+        return "(str.len %s)" % tr_string
+
+    def visit_string_predicate(self, node, tr_first, tr_second):
+        assert isinstance(node, String_Predicate)
+        return "(str.%s %s %s)" % (node.operation, tr_first, tr_second)
 
 
 class CVC5_Solver(VC_Solver):
@@ -420,6 +465,8 @@ class CVC5_Solver(VC_Solver):
                 self.values[constant.name] = value.getIntegerValue()
             elif constant.sort.name == "Real":
                 self.values[constant.name] = value.getRealValue()
+            elif constant.sort.name == "String":
+                self.values[constant.name] = value.getStringValue()
             else:  # pragma: no cover
                 assert False, value.__class__.__name__
 
@@ -537,6 +584,8 @@ class CVC5_Solver(VC_Solver):
             return self.solver.getIntegerSort()
         elif node.name == "Real":
             return self.solver.getRealSort()
+        elif node.name == "String":
+            return self.solver.getStringSort()
         else:
             assert False
 
@@ -558,6 +607,10 @@ class CVC5_Solver(VC_Solver):
         assert isinstance(node, Enumeration_Literal)
         cons = self.literal_mapping[node.sort][node.value]
         return self.solver.mkTerm(cvc5.Kind.APPLY_CONSTRUCTOR, cons)
+
+    def visit_string_literal(self, node, tr_sort):
+        assert isinstance(node, String_Literal)
+        return self.solver.mkString(node.value)
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
@@ -624,6 +677,21 @@ class CVC5_Solver(VC_Solver):
                 "mod"  : cvc5.Kind.INTS_MODULUS}
 
         return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
+
+    def visit_string_length(self, node, tr_string):
+        assert isinstance(node, String_Length)
+        return self.solver.mkTerm(cvc5.Kind.STRING_LENGTH, tr_string)
+
+    def visit_string_predicate(self, node, tr_first, tr_second):
+        assert isinstance(node, String_Predicate)
+
+        kind = {"contains" : cvc5.Kind.STRING_CONTAINS,
+                "prefixof" : cvc5.Kind.STRING_PREFIX,
+                "suffixof" : cvc5.Kind.STRING_SUFFIX}
+
+        return self.solver.mkTerm(kind[node.operation],
+                                  tr_first,
+                                  tr_second)
 
 
 ##############################################################################
@@ -692,6 +760,7 @@ class Sort(Node):
 BUILTIN_BOOLEAN = Sort("Bool")
 BUILTIN_INTEGER = Sort("Int")
 BUILTIN_REAL    = Sort("Real")
+BUILTIN_STRING  = Sort("String")
 
 
 class Expression(Node, metaclass=ABCMeta):
@@ -835,6 +904,17 @@ class Enumeration_Literal(Literal):
         return visitor.visit_enumeration_literal(self, self.sort.walk(visitor))
 
 
+class String_Literal(Literal):
+    def __init__(self, value):
+        assert isinstance(value, str)
+        super().__init__(BUILTIN_STRING)
+        self.value = value
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_string_literal(self, self.sort.walk(visitor))
+
+
 class Constant(Expression):
     def __init__(self, sort, name):
         super().__init__(sort)
@@ -943,7 +1023,7 @@ class Comparison(Expression):
 
 
 ##############################################################################
-# Arithmetic
+# Arithmetic & Functions
 ##############################################################################
 
 class Unary_Int_Arithmetic_Op(Expression):
@@ -981,3 +1061,34 @@ class Binary_Int_Arithmetic_Op(Expression):
         tr_lhs = self.lhs.walk(visitor)
         tr_rhs = self.rhs.walk(visitor)
         return visitor.visit_binary_int_arithmetic_op(self, tr_lhs, tr_rhs)
+
+
+class String_Length(Expression):
+    def __init__(self, string):
+        assert isinstance(string, Expression)
+        assert string.sort is BUILTIN_STRING
+        super().__init__(BUILTIN_INTEGER)
+        self.string = string
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_string_length(self, self.string.walk(visitor))
+
+
+class String_Predicate(Expression):
+    def __init__(self, operation, first, second):
+        assert operation in ("contains", "prefixof", "suffixof")
+        assert isinstance(first, Expression)
+        assert first.sort is BUILTIN_STRING
+        assert isinstance(second, Expression)
+        assert second.sort is BUILTIN_STRING
+        super().__init__(BUILTIN_BOOLEAN)
+        self.operation = operation
+        self.first     = first
+        self.second    = second
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_string_predicate(self,
+                                              self.first.walk(visitor),
+                                              self.second.walk(visitor))
