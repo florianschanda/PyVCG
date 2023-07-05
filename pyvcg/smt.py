@@ -41,10 +41,6 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(logic, str)
 
     @abstractmethod
-    def visit_sort(self, node):
-        assert isinstance(node, Sort)
-
-    @abstractmethod
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
         assert isinstance(node, Constant_Declaration)
 
@@ -53,12 +49,28 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Assertion)
 
     @abstractmethod
+    def visit_enumeration_declaration(self, node):
+        assert isinstance(node, Enumeration_Declaration)
+
+    @abstractmethod
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+
+    @abstractmethod
+    def visit_enumeration(self, node):
+        assert isinstance(node, Enumeration)
+
+    @abstractmethod
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
 
     @abstractmethod
     def visit_integer_literal(self, node, tr_sort):
         assert isinstance(node, Integer_Literal)
+
+    @abstractmethod
+    def visit_enumeration_literal(self, node, tr_sort):
+        assert isinstance(node, Enumeration_Literal)
 
     @abstractmethod
     def visit_constant(self, node, tr_sort):
@@ -118,7 +130,8 @@ class Logic_Visitor(Visitor):
         self.logics = set()
 
     def get_logic_string(self):
-        allowed_logics = set(["quant", "int", "real", "nonlinear"])
+        allowed_logics = set(["quant", "int", "real",
+                              "nonlinear", "datatypes"])
 
         assert not self.logics or self.logics < allowed_logics, \
             "%s is not a permitted logic" % (self.logics - allowed_logics)
@@ -129,6 +142,9 @@ class Logic_Visitor(Visitor):
             logic = "QF_"
 
         logic += "UF"
+
+        if "datatypes" in self.logics:
+            logic += "DT"
 
         if "int" in self.logics or \
            "real" in self.logics:
@@ -149,17 +165,6 @@ class Logic_Visitor(Visitor):
         assert isinstance(logic, str)
         assert False
 
-    def visit_sort(self, node):
-        assert isinstance(node, Sort)
-        if node.name == "Bool":
-            return set()
-        elif node.name == "Int":
-            return {"int"}
-        elif node.name == "Real":
-            return {"real"}
-        else:
-            assert False, "unexpected base sort %s" % node.name
-
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
         assert isinstance(node, Constant_Declaration)
         assert isinstance(tr_symbol, set)
@@ -173,6 +178,25 @@ class Logic_Visitor(Visitor):
         assert isinstance(tr_expression, set)
         self.logics |= tr_expression
 
+    def visit_enumeration_declaration(self, node):
+        assert isinstance(node, Enumeration_Declaration)
+        self.logics.add("datatypes")
+
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+        if node.name == "Bool":
+            return set()
+        elif node.name == "Int":
+            return {"int"}
+        elif node.name == "Real":
+            return {"real"}
+        else:
+            assert False, "unexpected base sort %s" % node.name
+
+    def visit_enumeration(self, node):
+        assert isinstance(node, Enumeration)
+        return {"datatypes"}
+
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
         assert isinstance(tr_sort, set)
@@ -182,6 +206,10 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Integer_Literal)
         assert isinstance(tr_sort, set)
         return tr_sort
+
+    def visit_enumeration_literal(self, node, tr_sort):
+        assert isinstance(node, Enumeration_Literal)
+        return {"datatypes"}
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
@@ -259,10 +287,6 @@ class SMTLIB_Generator(VC_Writer):
 
         return "\n".join(script) + "\n"
 
-    def visit_sort(self, node):
-        assert isinstance(node, Sort)
-        return node.name
-
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
         assert isinstance(node, Constant_Declaration)
         assert isinstance(tr_symbol, str)
@@ -285,6 +309,22 @@ class SMTLIB_Generator(VC_Writer):
         self.emit_comment(node.comment)
         self.lines.append("(assert %s)" % tr_expression)
 
+    def visit_enumeration_declaration(self, node):
+        assert isinstance(node, Enumeration_Declaration)
+        self.emit_comment(node.comment)
+        self.lines.append("(declare-datatype %s (%s))" %
+                          (node.sort.name,
+                           " ".join("(%s)" % literal
+                                    for literal in node.sort.literals)))
+
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+        return node.name
+
+    def visit_enumeration(self, node):
+        assert isinstance(node, Enumeration)
+        return node.name
+
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
         return "true" if node.value else "false"
@@ -295,6 +335,10 @@ class SMTLIB_Generator(VC_Writer):
             return str(node.value)
         else:
             return "(- %u)" % -node.value
+
+    def visit_enumeration_literal(self, node, tr_sort):
+        assert isinstance(node, Enumeration_Literal)
+        return "(as %s %s)" % (node.value, tr_sort)
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
@@ -335,7 +379,9 @@ class CVC5_Solver(VC_Solver):
         self.result  = None
         self.values  = {}
 
-        self.const_mapping = {}
+        self.const_mapping   = {}
+        self.enum_mapping    = {}
+        self.literal_mapping = {}
 
         self.relevant_values = []
 
@@ -352,14 +398,16 @@ class CVC5_Solver(VC_Solver):
 
         for constant in self.relevant_values:
             value = self.solver.getValue(self.const_mapping[constant])
-            if constant.sort.name == "Bool":
+            if isinstance(constant.sort, Enumeration):
+                self.values[constant.name] = str(value)
+            elif constant.sort.name == "Bool":
                 self.values[constant.name] = value.getBooleanValue()
             elif constant.sort.name == "Int":
                 self.values[constant.name] = value.getIntegerValue()
             elif constant.sort.name == "Real":
                 self.values[constant.name] = value.getRealValue()
             else:  # pragma: no cover
-                assert False
+                assert False, value.__class__.__name__
 
     def get_status(self):
         assert self.result is not None
@@ -379,18 +427,6 @@ class CVC5_Solver(VC_Solver):
         for statement in node.statements:
             statement.walk(self)
 
-    def visit_sort(self, node):
-        assert isinstance(node, Sort)
-
-        if node.name == "Bool":
-            return self.solver.getBooleanSort()
-        elif node.name == "Int":
-            return self.solver.getIntegerSort()
-        elif node.name == "Real":
-            return self.solver.getRealSort()
-        else:
-            assert False
-
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
         assert isinstance(node, Constant_Declaration)
         assert node.symbol in self.const_mapping
@@ -407,6 +443,37 @@ class CVC5_Solver(VC_Solver):
 
         self.solver.assertFormula(tr_expression)
 
+    def visit_enumeration_declaration(self, node):
+        assert isinstance(node, Enumeration_Declaration)
+
+        ctors = [self.solver.mkDatatypeConstructorDecl(literal)
+                 for literal in node.sort.literals]
+
+        sort = self.solver.declareDatatype(node.sort.name, *ctors)
+        self.enum_mapping[node.sort] = sort
+
+        datatype = sort.getDatatype()
+        self.literal_mapping[node.sort] = {
+            literal: datatype.getConstructor(literal).getTerm()
+            for literal in node.sort.literals
+        }
+
+    def visit_sort(self, node):
+        assert isinstance(node, Sort)
+
+        if node.name == "Bool":
+            return self.solver.getBooleanSort()
+        elif node.name == "Int":
+            return self.solver.getIntegerSort()
+        elif node.name == "Real":
+            return self.solver.getRealSort()
+        else:
+            assert False
+
+    def visit_enumeration(self, node):
+        assert isinstance(node, Enumeration)
+        return self.enum_mapping[node]
+
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
 
@@ -416,6 +483,11 @@ class CVC5_Solver(VC_Solver):
         assert isinstance(node, Integer_Literal)
 
         return self.solver.mkInteger(node.value)
+
+    def visit_enumeration_literal(self, node, tr_sort):
+        assert isinstance(node, Enumeration_Literal)
+        cons = self.literal_mapping[node.sort][node.value]
+        return self.solver.mkTerm(cvc5.Kind.APPLY_CONSTRUCTOR, cons)
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
@@ -592,6 +664,37 @@ class Assertion(Statement):
         return visitor.visit_assertion(self, self.expression.walk(visitor))
 
 
+class Enumeration_Declaration(Statement):
+    def __init__(self, sort, comment=None):
+        super().__init__(comment)
+        assert isinstance(sort, Enumeration)
+        self.sort = sort
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_enumeration_declaration(self)
+
+
+##############################################################################
+# Sorts
+##############################################################################
+
+class Enumeration(Sort):
+    def __init__(self, name):
+        super().__init__(name)
+        self.literals = []
+
+    def add_literal(self, name):
+        assert isinstance(name, str)
+        assert name not in self.literals
+
+        self.literals.append(name)
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_enumeration(self)
+
+
 ##############################################################################
 # Expressions
 ##############################################################################
@@ -633,6 +736,18 @@ class Integer_Literal(Literal):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_integer_literal(self, self.sort.walk(visitor))
+
+
+class Enumeration_Literal(Literal):
+    def __init__(self, enumeration, value):
+        assert isinstance(enumeration, Enumeration)
+        assert value in enumeration.literals
+        super().__init__(enumeration)
+        self.value = value
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_enumeration_literal(self, self.sort.walk(visitor))
 
 
 class Constant(Expression):

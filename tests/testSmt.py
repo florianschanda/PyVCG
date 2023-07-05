@@ -296,3 +296,77 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
+
+    def test_Enum_Simple(self):
+        enum = smt.Enumeration("Colour")
+        enum.add_literal("red")
+        enum.add_literal("green")
+        enum.add_literal("blue")
+
+        self.script.add_statement(
+            smt.Enumeration_Declaration(enum))
+
+        sym_a = smt.Constant(enum, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a, relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFDT)
+            (set-option :produce-models true)
+
+            (declare-datatype Colour ((red) (green) (blue)))
+            (declare-const a Colour)
+            (check-sat)
+            (get-value (a))
+            (exit)
+            """
+        )
+        self.assertIn(self.values["a"], enum.literals)
+
+    def test_Enum_Exclusion(self):
+        enum = smt.Enumeration("Team")
+        enum.add_literal("green")
+        enum.add_literal("purple")
+
+        self.script.add_statement(
+            smt.Enumeration_Declaration(enum))
+
+        sym_a = smt.Constant(enum, "a")
+        sym_b = smt.Constant(enum, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a, relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b, relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(
+                    smt.Comparison("=", sym_a, sym_b))))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               sym_a,
+                               smt.Enumeration_Literal(enum, "green"))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFDT)
+            (set-option :produce-models true)
+
+            (declare-datatype Team ((green) (purple)))
+            (declare-const a Team)
+            (declare-const b Team)
+            (assert (not (= a b)))
+            (assert (= a (as green Team)))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertValue("a", "green")
+        self.assertValue("b", "purple")
