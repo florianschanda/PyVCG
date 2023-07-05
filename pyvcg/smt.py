@@ -23,8 +23,6 @@
 ##############################################################################
 
 from abc import ABCMeta, abstractmethod
-from functools import reduce
-import operator as ops
 import re
 
 import cvc5
@@ -36,9 +34,12 @@ import cvc5
 
 class Visitor(metaclass=ABCMeta):
     @abstractmethod
-    def visit_script(self, node, logic):
+    def visit_script(self, node, logic, functions):
         assert isinstance(node, Script)
         assert isinstance(logic, str)
+        assert isinstance(functions, set)
+        assert all(isinstance(function, str)
+                   for function in functions)
 
     @abstractmethod
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
@@ -127,7 +128,8 @@ class VC_Solver(Visitor, metaclass=ABCMeta):
 
 class Logic_Visitor(Visitor):
     def __init__(self):
-        self.logics = set()
+        self.logics    = set()
+        self.functions = set()
 
     def get_logic_string(self):
         allowed_logics = set(["quant", "int", "real",
@@ -160,23 +162,17 @@ class Logic_Visitor(Visitor):
 
         return logic
 
-    def visit_script(self, node, logic):  # pragma: no cover
-        assert isinstance(node, Script)
-        assert isinstance(logic, str)
+    def get_required_functions(self):
+        return self.functions
+
+    def visit_script(self, node, logic, functions):  # pragma: no cover
         assert False
 
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
         assert isinstance(node, Constant_Declaration)
-        assert isinstance(tr_symbol, set)
-        assert isinstance(tr_value, set) or tr_value is None
-        if tr_value is not None:
-            self.logics |= tr_value
-        self.logics |= tr_symbol
 
     def visit_assertion(self, node, tr_expression):
         assert isinstance(node, Assertion)
-        assert isinstance(tr_expression, set)
-        self.logics |= tr_expression
 
     def visit_enumeration_declaration(self, node):
         assert isinstance(node, Enumeration_Declaration)
@@ -185,71 +181,58 @@ class Logic_Visitor(Visitor):
     def visit_sort(self, node):
         assert isinstance(node, Sort)
         if node.name == "Bool":
-            return set()
+            pass
         elif node.name == "Int":
-            return {"int"}
+            self.logics.add("int")
         elif node.name == "Real":
-            return {"real"}
+            self.logics.add("real")
         else:
             assert False, "unexpected base sort %s" % node.name
 
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
-        return {"datatypes"}
+        self.logics.add("datatypes")
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
-        assert isinstance(tr_sort, set)
-        return tr_sort
 
     def visit_integer_literal(self, node, tr_sort):
         assert isinstance(node, Integer_Literal)
-        assert isinstance(tr_sort, set)
-        return tr_sort
 
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, Enumeration_Literal)
-        return {"datatypes"}
+        self.logics.add("datatypes")
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
-        assert isinstance(tr_sort, set)
-        return tr_sort
 
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
-        assert isinstance(tr_sort, set)
-        assert isinstance(tr_expression, set)
-        return tr_sort | tr_expression
 
     def visit_conjunction(self, node, tr_sort, tr_terms):
         assert isinstance(node, Conjunction)
         assert isinstance(tr_terms, list)
-        return tr_sort | reduce(ops.__or__, tr_terms, set())
 
     def visit_disjunction(self, node, tr_sort, tr_terms):
         assert isinstance(node, Disjunction)
         assert isinstance(tr_terms, list)
-        return tr_sort | reduce(ops.__or__, tr_terms, set())
 
     def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
         assert isinstance(node, Implication)
-        return tr_sort | tr_lhs | tr_rhs
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
-        return tr_lhs | tr_rhs
 
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
-        nonlinear = node.operator in ("+", "-") or \
+        linear = node.operator in ("+", "-") or \
             (node.operator == "*" and (node.lhs.is_static() or
                                        node.rhs.is_static())) or \
             (node.lhs.is_static() and node.rhs.is_static())
-        if nonlinear:
-            return tr_lhs | tr_rhs
-        else:
-            return {"nonlinear"} | tr_lhs | tr_rhs
+        if not linear:
+            self.logics.add("nonlinear")
+        if node.operator == "floordiv":
+            self.functions.add("floordiv")
 
 
 class SMTLIB_Generator(VC_Writer):
@@ -269,15 +252,28 @@ class SMTLIB_Generator(VC_Writer):
         else:
             return "|%s|" % name
 
-    def visit_script(self, node, logic):
+    def visit_script(self, node, logic, functions):
         assert isinstance(node, Script)
         assert isinstance(logic, str)
+        assert isinstance(functions, set)
+        assert all(isinstance(function, str)
+                   for function in functions)
 
         script = [
             "(set-logic %s)" % logic,
             "(set-option :produce-models true)",
-            "",
         ]
+        for function in functions:
+            if function == "floordiv":
+                script.append("(define-fun floordiv ((lhs Int) (rhs Int)) Int")
+                script.append("  (ite (< rhs 0)")
+                script.append("       (div (- lhs) (- rhs))")
+                script.append("       (div lhs rhs)))")
+
+            else:
+                assert False
+
+        script.append("")
         for statement in node.statements:
             statement.walk(self)
         script += self.lines
@@ -379,11 +375,12 @@ class CVC5_Solver(VC_Solver):
         self.result  = None
         self.values  = {}
 
-        self.const_mapping   = {}
-        self.enum_mapping    = {}
-        self.literal_mapping = {}
+        self.const_mapping    = {}
+        self.enum_mapping     = {}
+        self.literal_mapping  = {}
+        self.function_mapping = {}
 
-        self.relevant_values = []
+        self.relevant_values  = []
 
     def solve(self):
         result = self.solver.checkSat()
@@ -417,12 +414,44 @@ class CVC5_Solver(VC_Solver):
         assert self.result is not None
         return self.values
 
-    def visit_script(self, node, logic):
+    def visit_script(self, node, logic, functions):
         assert isinstance(node, Script)
         assert isinstance(logic, str)
+        assert isinstance(functions, set)
+        assert all(isinstance(function, str)
+                   for function in functions)
 
         self.solver.setOption("produce-models", "true")
         self.solver.setLogic(logic)
+
+        for function in functions:
+            if function == "floordiv":
+                lhs = self.solver.mkVar(self.solver.getIntegerSort(),
+                                        "lhs")
+                rhs = self.solver.mkVar(self.solver.getIntegerSort(),
+                                        "rhs")
+                fun = self.solver.defineFun(
+                    function,
+                    [lhs, rhs],
+                    self.solver.getIntegerSort(),
+                    self.solver.mkTerm(
+                        cvc5.Kind.ITE,
+                        self.solver.mkTerm(cvc5.Kind.LT,
+                                           rhs,
+                                           self.solver.mkInteger(0)),
+                        self.solver.mkTerm(cvc5.Kind.INTS_DIVISION,
+                                           self.solver.mkTerm(cvc5.Kind.NEG,
+                                                              lhs),
+                                           self.solver.mkTerm(cvc5.Kind.NEG,
+                                                              rhs)),
+                        self.solver.mkTerm(cvc5.Kind.INTS_DIVISION,
+                                           lhs,
+                                           rhs)))
+
+            else:
+                assert False
+
+            self.function_mapping[function] = fun
 
         for statement in node.statements:
             statement.walk(self)
@@ -533,6 +562,12 @@ class CVC5_Solver(VC_Solver):
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
 
+        if node.operator == "floordiv":
+            return self.solver.mkTerm(cvc5.Kind.APPLY_UF,
+                                      self.function_mapping[node.operator],
+                                      tr_lhs,
+                                      tr_rhs)
+
         kind = {"+"    : cvc5.Kind.ADD,
                 "-"    : cvc5.Kind.SUB,
                 "*"    : cvc5.Kind.MULT,
@@ -565,7 +600,8 @@ class Script(Node):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_script(self,
-                                    self.logic.get_logic_string())
+                                    self.logic.get_logic_string(),
+                                    self.logic.get_required_functions())
 
     def add_statement(self, statement):
         assert isinstance(statement, Statement)
@@ -863,7 +899,7 @@ class Comparison(Expression):
 
 class Binary_Int_Arithmetic_Op(Expression):
     def __init__(self, operator, lhs, rhs):
-        assert operator in ("+", "-", "*", "div", "mod")
+        assert operator in ("+", "-", "*", "div", "mod", "floordiv")
         assert isinstance(lhs, Expression)
         assert isinstance(rhs, Expression)
         assert lhs.sort.name == "Int"

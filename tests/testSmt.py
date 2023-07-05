@@ -1,4 +1,5 @@
 import unittest
+import subprocess
 
 from io import StringIO
 from fractions import Fraction
@@ -21,11 +22,21 @@ class SMTBasicTests(unittest.TestCase):
 
         # Verify SMTLIB output
         string = "\n".join(s.strip() for s in string.strip().splitlines())
-        self.assertSequenceEqual(string.splitlines(),
-                                 self.smtlib.strip().splitlines())
+        self.assertSequenceEqual(
+            string.splitlines(),
+            list(s.strip()
+                 for s in self.smtlib.strip().splitlines()))
 
         # Verify CVC5 result
         self.assertEqual(self.result, status)
+
+        # Verify CVC5 result from SMTLIB input
+        result = subprocess.run(["cvc5"],
+                                input=string,
+                                check=True,
+                                capture_output=True,
+                                encoding="UTF-8")
+        self.assertEqual(result.stdout.splitlines()[0], status)
 
     def assertValue(self, name, value):
         self.assertIn(name, self.values)
@@ -370,3 +381,81 @@ class SMTBasicTests(unittest.TestCase):
         )
         self.assertValue("a", "green")
         self.assertValue("b", "purple")
+
+    def test_Basic_Division(self):
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        sym_b = smt.Constant(smt.BUILTIN_INTEGER, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Integer_Literal(5),
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Integer_Literal(-2),
+                                     relevant=True))
+
+        sym_result = smt.Constant(smt.BUILTIN_INTEGER, "result")
+        self.script.add_statement(
+            smt.Constant_Declaration(
+                sym_result,
+                smt.Binary_Int_Arithmetic_Op("div", sym_a, sym_b),
+                relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFNIA)
+            (set-option :produce-models true)
+
+            (define-const a Int 5)
+            (define-const b Int (- 2))
+            (define-const result Int (div a b))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (get-value (result))
+            (exit)
+            """
+        )
+        self.assertValue("result", -2)
+
+    def test_Floor_Division(self):
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        sym_b = smt.Constant(smt.BUILTIN_INTEGER, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Integer_Literal(5),
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Integer_Literal(-2),
+                                     relevant=True))
+
+        sym_result = smt.Constant(smt.BUILTIN_INTEGER, "result")
+        self.script.add_statement(
+            smt.Constant_Declaration(
+                sym_result,
+                smt.Binary_Int_Arithmetic_Op("floordiv", sym_a, sym_b),
+                relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFNIA)
+            (set-option :produce-models true)
+            (define-fun floordiv ((lhs Int) (rhs Int)) Int
+              (ite (< rhs 0)
+                   (div (- lhs) (- rhs))
+                   (div lhs rhs)))
+
+            (define-const a Int 5)
+            (define-const b Int (- 2))
+            (define-const result Int (floordiv a b))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (get-value (result))
+            (exit)
+            """
+        )
+        self.assertValue("result", -3)
