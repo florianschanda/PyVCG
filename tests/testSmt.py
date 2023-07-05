@@ -427,9 +427,10 @@ class SMTBasicTests(unittest.TestCase):
                                      smt.Integer_Literal(5),
                                      relevant=True))
         self.script.add_statement(
-            smt.Constant_Declaration(sym_b,
-                                     smt.Integer_Literal(-2),
-                                     relevant=True))
+            smt.Constant_Declaration(
+                sym_b,
+                smt.Unary_Int_Arithmetic_Op("-", smt.Integer_Literal(2)),
+                relevant=True))
 
         sym_result = smt.Constant(smt.BUILTIN_INTEGER, "result")
         self.script.add_statement(

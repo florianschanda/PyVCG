@@ -100,6 +100,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Comparison)
 
     @abstractmethod
+    def visit_unary_int_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Int_Arithmetic_Op)
+
+    @abstractmethod
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
 
@@ -222,6 +226,9 @@ class Logic_Visitor(Visitor):
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
+
+    def visit_unary_int_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Int_Arithmetic_Op)
 
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
@@ -368,12 +375,14 @@ class SMTLIB_Generator(VC_Writer):
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
-
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
+
+    def visit_unary_int_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Int_Arithmetic_Op)
+        return "(%s %s)" % (node.operator, tr_operand)
 
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
-
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
 
 
@@ -590,6 +599,14 @@ class CVC5_Solver(VC_Solver):
                 "="  : cvc5.Kind.EQUAL}
 
         return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
+
+    def visit_unary_int_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Int_Arithmetic_Op)
+
+        kind = {"-"   : cvc5.Kind.NEG,
+                "abs" : cvc5.Kind.ABS}
+
+        return self.solver.mkTerm(kind[node.operator], tr_operand)
 
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
@@ -928,6 +945,22 @@ class Comparison(Expression):
 ##############################################################################
 # Arithmetic
 ##############################################################################
+
+class Unary_Int_Arithmetic_Op(Expression):
+    def __init__(self, operator, operand):
+        assert operator in ("-", "abs")
+        assert isinstance(operand, Expression)
+        assert operand.sort is BUILTIN_INTEGER
+        super().__init__(operand.sort)
+
+        self.operator = operator
+        self.operand  = operand
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_operand = self.operand.walk(visitor)
+        return visitor.visit_unary_int_arithmetic_op(self, tr_operand)
+
 
 class Binary_Int_Arithmetic_Op(Expression):
     def __init__(self, operator, lhs, rhs):
