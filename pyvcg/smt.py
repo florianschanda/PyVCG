@@ -23,6 +23,7 @@
 ##############################################################################
 
 from abc import ABCMeta, abstractmethod
+from fractions import Fraction
 import re
 
 import cvc5
@@ -75,6 +76,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Integer_Literal)
 
     @abstractmethod
+    def visit_real_literal(self, node, tr_sort):
+        assert isinstance(node, Real_Literal)
+
+    @abstractmethod
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, Enumeration_Literal)
 
@@ -113,8 +118,16 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
 
     @abstractmethod
+    def visit_unary_real_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Real_Arithmetic_Op)
+
+    @abstractmethod
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
+
+    @abstractmethod
+    def visit_binary_real_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Real_Arithmetic_Op)
 
     @abstractmethod
     def visit_string_length(self, node, tr_string):
@@ -250,6 +263,9 @@ class Logic_Visitor(Visitor):
     def visit_integer_literal(self, node, tr_sort):
         assert isinstance(node, Integer_Literal)
 
+    def visit_real_literal(self, node, tr_sort):
+        assert isinstance(node, Real_Literal)
+
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, Enumeration_Literal)
         self.logics.add("datatypes")
@@ -281,6 +297,9 @@ class Logic_Visitor(Visitor):
     def visit_unary_int_arithmetic_op(self, node, tr_operand):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
 
+    def visit_unary_real_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Real_Arithmetic_Op)
+
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
         linear = node.operator in ("+", "-") or \
@@ -291,6 +310,15 @@ class Logic_Visitor(Visitor):
             self.logics.add("nonlinear")
         if node.operator in ("floor_div", "ada_remainder"):
             self.functions.add(node.operator)
+
+    def visit_binary_real_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Real_Arithmetic_Op)
+        linear = node.operator in ("+", "-") or \
+            (node.operator == "*" and (node.lhs.is_static() or
+                                       node.rhs.is_static())) or \
+            (node.lhs.is_static() and node.rhs.is_static())
+        if not linear:
+            self.logics.add("nonlinear")
 
     def visit_string_length(self, node, tr_string):
         assert isinstance(node, String_Length)
@@ -423,6 +451,12 @@ class SMTLIB_Generator(VC_Writer):
         else:
             return "(- %u)" % -node.value
 
+    def visit_real_literal(self, node, tr_sort):
+        assert isinstance(node, Real_Literal)
+        num, den = node.value.as_integer_ratio()
+        return "(/ %s %s)" % (("%u" % num if num >= 0 else "(- %u)" % num),
+                              ("%u" % den if den >= 0 else "(- %u)" % den))
+
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, Enumeration_Literal)
         return "(as %s %s)" % (node.value, tr_sort)
@@ -461,8 +495,16 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
         return "(%s %s)" % (node.operator, tr_operand)
 
+    def visit_unary_real_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Real_Arithmetic_Op)
+        return "(%s %s)" % (node.operator, tr_operand)
+
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
+        return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
+
+    def visit_binary_real_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Real_Arithmetic_Op)
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
 
     def visit_string_length(self, node, tr_string):
@@ -603,7 +645,7 @@ class CVC5_Solver(VC_Solver):
                                            rhs)))
 
             else:
-                assert False
+                assert False, function
 
             self.function_mapping[function] = fun
 
@@ -675,13 +717,16 @@ class CVC5_Solver(VC_Solver):
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
-
         return self.solver.mkBoolean(node.value)
 
     def visit_integer_literal(self, node, tr_sort):
         assert isinstance(node, Integer_Literal)
-
         return self.solver.mkInteger(node.value)
+
+    def visit_real_literal(self, node, tr_sort):
+        assert isinstance(node, Real_Literal)
+        num, den = node.value.as_integer_ratio()
+        return self.solver.mkReal(num, den)
 
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, Enumeration_Literal)
@@ -741,6 +786,14 @@ class CVC5_Solver(VC_Solver):
 
         return self.solver.mkTerm(kind[node.operator], tr_operand)
 
+    def visit_unary_real_arithmetic_op(self, node, tr_operand):
+        assert isinstance(node, Unary_Real_Arithmetic_Op)
+
+        kind = {"-"   : cvc5.Kind.NEG,
+                "abs" : cvc5.Kind.ABS}
+
+        return self.solver.mkTerm(kind[node.operator], tr_operand)
+
     def visit_binary_int_arithmetic_op(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Binary_Int_Arithmetic_Op)
 
@@ -755,6 +808,16 @@ class CVC5_Solver(VC_Solver):
                 "*"    : cvc5.Kind.MULT,
                 "div"  : cvc5.Kind.INTS_DIVISION,
                 "mod"  : cvc5.Kind.INTS_MODULUS}
+
+        return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
+
+    def visit_binary_real_arithmetic_op(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Binary_Real_Arithmetic_Op)
+
+        kind = {"+" : cvc5.Kind.ADD,
+                "-" : cvc5.Kind.SUB,
+                "*" : cvc5.Kind.MULT,
+                "/" : cvc5.Kind.DIVISION}
 
         return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
 
@@ -1010,6 +1073,21 @@ class Integer_Literal(Literal):
         return visitor.visit_integer_literal(self, self.sort.walk(visitor))
 
 
+class Real_Literal(Literal):
+    def __init__(self, value):
+        super().__init__(BUILTIN_REAL)
+        assert isinstance(value, (int, Fraction))
+
+        if isinstance(value, int):
+            self.value = Fraction(value)
+        else:
+            self.value = value
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_real_literal(self, self.sort.walk(visitor))
+
+
 class Enumeration_Literal(Literal):
     def __init__(self, enumeration, value):
         assert isinstance(enumeration, Enumeration)
@@ -1160,6 +1238,22 @@ class Unary_Int_Arithmetic_Op(Expression):
         return visitor.visit_unary_int_arithmetic_op(self, tr_operand)
 
 
+class Unary_Real_Arithmetic_Op(Expression):
+    def __init__(self, operator, operand):
+        assert operator in ("-", "abs")
+        assert isinstance(operand, Expression)
+        assert operand.sort is BUILTIN_REAL
+        super().__init__(operand.sort)
+
+        self.operator = operator
+        self.operand  = operand
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_operand = self.operand.walk(visitor)
+        return visitor.visit_unary_real_arithmetic_op(self, tr_operand)
+
+
 class Binary_Int_Arithmetic_Op(Expression):
     def __init__(self, operator, lhs, rhs):
         assert operator in ("+", "-", "*", "div", "mod",
@@ -1179,6 +1273,26 @@ class Binary_Int_Arithmetic_Op(Expression):
         tr_lhs = self.lhs.walk(visitor)
         tr_rhs = self.rhs.walk(visitor)
         return visitor.visit_binary_int_arithmetic_op(self, tr_lhs, tr_rhs)
+
+
+class Binary_Real_Arithmetic_Op(Expression):
+    def __init__(self, operator, lhs, rhs):
+        assert operator in ("+", "-", "*", "/")
+        assert isinstance(lhs, Expression)
+        assert isinstance(rhs, Expression)
+        assert lhs.sort.name == "Real"
+        assert lhs.sort is rhs.sort
+        super().__init__(lhs.sort)
+
+        self.operator = operator
+        self.lhs      = lhs
+        self.rhs      = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_lhs = self.lhs.walk(visitor)
+        tr_rhs = self.rhs.walk(visitor)
+        return visitor.visit_binary_real_arithmetic_op(self, tr_lhs, tr_rhs)
 
 
 class String_Length(Expression):

@@ -595,3 +595,48 @@ class SMTBasicTests(unittest.TestCase):
         self.assertGreater(len(self.values["a"]), 10)
         self.assertIn(42, self.values["a"])
         self.assertEqual(self.values["a"][3], 123)
+
+    def test_Real_Operations(self):
+        sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
+        sym_b = smt.Constant(smt.BUILTIN_REAL, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(">",
+                               smt.Unary_Real_Arithmetic_Op(
+                                   "abs",
+                                   smt.Binary_Real_Arithmetic_Op("+",
+                                                                 sym_a,
+                                                                 sym_b)),
+                               smt.Real_Literal(10))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Binary_Real_Arithmetic_Op("*",
+                                                             sym_a,
+                                                             sym_b),
+                               smt.Real_Literal(Fraction(7, 3)))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFNRA)
+            (set-option :produce-models true)
+
+            (declare-const a Real)
+            (declare-const b Real)
+            (assert (> (abs (+ a b)) (/ 10 1)))
+            (assert (= (* a b) (/ 7 3)))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertGreater(abs(self.values["a"] + self.values["b"]), 10)
+        self.assertEqual(self.values["a"] * self.values["b"], Fraction(7, 3))
