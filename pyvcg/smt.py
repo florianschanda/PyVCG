@@ -128,6 +128,14 @@ class Visitor(metaclass=ABCMeta):
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
 
+    @abstractmethod
+    def visit_sequence_index(self, node, tr_sequence, tr_index):
+        assert isinstance(node, Sequence_Index)
+
+    @abstractmethod
+    def visit_sequence_contains(self, node, tr_sequence, tr_item):
+        assert isinstance(node, Sequence_Contains)
+
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
     pass
@@ -296,6 +304,14 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Sequence_Length)
         self.logics.add("sequences")
 
+    def visit_sequence_index(self, node, tr_sequence, tr_index):
+        assert isinstance(node, Sequence_Index)
+        self.logics.add("sequences")
+
+    def visit_sequence_contains(self, node, tr_sequence, tr_item):
+        assert isinstance(node, Sequence_Contains)
+        self.logics.add("sequences")
+
 
 class SMTLIB_Generator(VC_Writer):
     def __init__(self):
@@ -460,6 +476,14 @@ class SMTLIB_Generator(VC_Writer):
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
         return "(seq.len %s)" % tr_sequence
+
+    def visit_sequence_index(self, node, tr_sequence, tr_index):
+        assert isinstance(node, Sequence_Index)
+        return "(seq.nth %s %s)" % (tr_sequence, tr_index)
+
+    def visit_sequence_contains(self, node, tr_sequence, tr_item):
+        assert isinstance(node, Sequence_Contains)
+        return "(seq.contains %s (seq.unit %s))" % (tr_sequence, tr_item)
 
 
 class CVC5_Solver(VC_Solver):
@@ -752,6 +776,17 @@ class CVC5_Solver(VC_Solver):
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
         return self.solver.mkTerm(cvc5.Kind.SEQ_LENGTH, tr_sequence)
+
+    def visit_sequence_index(self, node, tr_sequence, tr_index):
+        assert isinstance(node, Sequence_Index)
+        return self.solver.mkTerm(cvc5.Kind.SEQ_NTH, tr_sequence, tr_index)
+
+    def visit_sequence_contains(self, node, tr_sequence, tr_item):
+        assert isinstance(node, Sequence_Contains)
+        return self.solver.mkTerm(cvc5.Kind.SEQ_CONTAINS,
+                                  tr_sequence,
+                                  self.solver.mkTerm(cvc5.Kind.SEQ_UNIT,
+                                                     tr_item))
 
 
 ##############################################################################
@@ -1188,3 +1223,35 @@ class Sequence_Length(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_sequence_length(self,
                                              self.sequence.walk(visitor))
+
+class Sequence_Index(Expression):
+    def __init__(self, sequence, index):
+        assert isinstance(sequence, Expression)
+        assert isinstance(sequence.sort, Sequence_Sort)
+        assert isinstance(index, Expression)
+        assert index.sort is BUILTIN_INTEGER
+        super().__init__(sequence.sort.element_sort())
+        self.sequence = sequence
+        self.index    = index
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_sequence_index(self,
+                                            self.sequence.walk(visitor),
+                                            self.index.walk(visitor))
+
+class Sequence_Contains(Expression):
+    def __init__(self, sequence, item):
+        assert isinstance(sequence, Expression)
+        assert isinstance(sequence.sort, Sequence_Sort)
+        assert isinstance(item, Expression)
+        assert sequence.sort.element_sort() is item.sort
+        super().__init__(BUILTIN_BOOLEAN)
+        self.sequence = sequence
+        self.item     = item
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_sequence_contains(self,
+                                               self.sequence.walk(visitor),
+                                               self.item.walk(visitor))

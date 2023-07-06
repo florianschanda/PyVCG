@@ -566,7 +566,16 @@ class SMTBasicTests(unittest.TestCase):
             smt.Assertion(
                 smt.Comparison(">",
                                smt.Sequence_Length(sym_a),
-                               smt.Integer_Literal(5))))
+                               smt.Integer_Literal(10))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Sequence_Contains(sym_a, smt.Integer_Literal(42))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Sequence_Index(sym_a,
+                                                  smt.Integer_Literal(3)),
+                               smt.Integer_Literal(123))))
 
         self.assertResult(
             "sat",
@@ -575,10 +584,14 @@ class SMTBasicTests(unittest.TestCase):
             (set-option :produce-models true)
 
             (declare-const a (Seq Int))
-            (assert (> (seq.len a) 5))
+            (assert (> (seq.len a) 10))
+            (assert (seq.contains a (seq.unit 42)))
+            (assert (= (seq.nth a 3) 123))
             (check-sat)
             (get-value (a))
             (exit)
             """
         )
-        self.assertGreater(len(self.values["a"]), 5)
+        self.assertGreater(len(self.values["a"]), 10)
+        self.assertIn(42, self.values["a"])
+        self.assertEqual(self.values["a"][3], 123)
