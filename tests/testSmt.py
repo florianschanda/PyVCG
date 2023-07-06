@@ -555,3 +555,30 @@ class SMTBasicTests(unittest.TestCase):
         self.assertTrue(self.values["a"].endswith("bar"),
                         self.values["a"])
         self.assertNotIn("A", self.values["a"])
+
+    def test_Sequences(self):
+        sort = smt.Sequence_Sort(smt.BUILTIN_INTEGER)
+        sym_a = smt.Constant(sort, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(">",
+                               smt.Sequence_Length(sym_a),
+                               smt.Integer_Literal(5))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFSLIA)
+            (set-option :produce-models true)
+
+            (declare-const a (Seq Int))
+            (assert (> (seq.len a) 5))
+            (check-sat)
+            (get-value (a))
+            (exit)
+            """
+        )
+        self.assertGreater(len(self.values["a"]), 5)

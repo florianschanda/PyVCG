@@ -58,6 +58,11 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Sort)
 
     @abstractmethod
+    def visit_parametric_sort(self, node, tr_parameters):
+        assert isinstance(node, Parametric_Sort)
+        assert isinstance(tr_parameters, list)
+
+    @abstractmethod
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
 
@@ -119,6 +124,10 @@ class Visitor(metaclass=ABCMeta):
     def visit_string_predicate(self, node, tr_first, tr_second):
         assert isinstance(node, String_Predicate)
 
+    @abstractmethod
+    def visit_sequence_length(self, node, tr_sequence):
+        assert isinstance(node, Sequence_Length)
+
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
     pass
@@ -149,7 +158,7 @@ class Logic_Visitor(Visitor):
 
     def get_logic_string(self):
         allowed_logics = set(["quant", "int", "real",
-                              "strings", "arrays",
+                              "strings", "arrays", "sequences",
                               "nonlinear", "datatypes"])
 
         assert not self.logics or self.logics < allowed_logics, \
@@ -168,7 +177,7 @@ class Logic_Visitor(Visitor):
         if "datatypes" in self.logics:
             logic += "DT"
 
-        if "strings" in self.logics:
+        if "strings" in self.logics or "sequences" in self.logics:
             logic += "S"
 
         if "int" in self.logics or \
@@ -211,6 +220,15 @@ class Logic_Visitor(Visitor):
             self.logics.add("real")
         elif node.name == "String":
             self.logics.add("strings")
+        else:
+            assert False, "unexpected base sort %s" % node.name
+
+    def visit_parametric_sort(self, node, tr_parameters):
+        assert isinstance(node, Parametric_Sort)
+        assert isinstance(tr_parameters, list)
+
+        if node.name == "Seq":
+            self.logics.add("sequences")
         else:
             assert False, "unexpected base sort %s" % node.name
 
@@ -273,6 +291,10 @@ class Logic_Visitor(Visitor):
     def visit_string_predicate(self, node, tr_first, tr_second):
         assert isinstance(node, String_Predicate)
         self.logics.add("strings")
+
+    def visit_sequence_length(self, node, tr_sequence):
+        assert isinstance(node, Sequence_Length)
+        self.logics.add("sequences")
 
 
 class SMTLIB_Generator(VC_Writer):
@@ -365,6 +387,11 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Sort)
         return node.name
 
+    def visit_parametric_sort(self, node, tr_parameters):
+        assert isinstance(node, Parametric_Sort)
+        assert isinstance(tr_parameters, list)
+        return "(%s %s)" % (node.name, " ".join(tr_parameters))
+
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
         return node.name
@@ -430,6 +457,10 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, String_Predicate)
         return "(str.%s %s %s)" % (node.operation, tr_first, tr_second)
 
+    def visit_sequence_length(self, node, tr_sequence):
+        assert isinstance(node, Sequence_Length)
+        return "(seq.len %s)" % tr_sequence
+
 
 class CVC5_Solver(VC_Solver):
     def __init__(self):
@@ -441,8 +472,29 @@ class CVC5_Solver(VC_Solver):
         self.enum_mapping     = {}
         self.literal_mapping  = {}
         self.function_mapping = {}
+        self.sort_mapping     = {}
 
         self.relevant_values  = []
+
+    def term_to_python(self, sort, term):
+        assert isinstance(sort, Sort)
+        assert isinstance(term, cvc5.Term)
+
+        if isinstance(sort, Enumeration):
+            return str(term)
+        elif sort.name == "Bool":
+            return term.getBooleanValue()
+        elif sort.name == "Int":
+            return term.getIntegerValue()
+        elif sort.name == "Real":
+            return term.getRealValue()
+        elif sort.name == "String":
+            return term.getStringValue()
+        elif sort.name == "Seq":
+            return [self.term_to_python(sort.element_sort(), t)
+                    for t in term.getSequenceValue()]
+        else:
+            assert False, value.__class__.__name__
 
     def solve(self):
         result = self.solver.checkSat()
@@ -457,18 +509,8 @@ class CVC5_Solver(VC_Solver):
 
         for constant in self.relevant_values:
             value = self.solver.getValue(self.const_mapping[constant])
-            if isinstance(constant.sort, Enumeration):
-                self.values[constant.name] = str(value)
-            elif constant.sort.name == "Bool":
-                self.values[constant.name] = value.getBooleanValue()
-            elif constant.sort.name == "Int":
-                self.values[constant.name] = value.getIntegerValue()
-            elif constant.sort.name == "Real":
-                self.values[constant.name] = value.getRealValue()
-            elif constant.sort.name == "String":
-                self.values[constant.name] = value.getStringValue()
-            else:  # pragma: no cover
-                assert False, value.__class__.__name__
+            self.values[constant.name] = self.term_to_python(constant.sort,
+                                                             value)
 
     def get_status(self):
         assert self.result is not None
@@ -589,6 +631,20 @@ class CVC5_Solver(VC_Solver):
         else:
             assert False
 
+    def visit_parametric_sort(self, node, tr_parameters):
+        assert isinstance(node, Parametric_Sort)
+        assert isinstance(tr_parameters, list)
+
+        if node not in self.sort_mapping:
+            if node.name == "Seq":
+                assert len(tr_parameters) == 1
+                self.sort_mapping[node] = \
+                    self.solver.mkSequenceSort(tr_parameters[0])
+            else:
+                assert False
+
+        return self.sort_mapping[node]
+
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
         return self.enum_mapping[node]
@@ -693,6 +749,10 @@ class CVC5_Solver(VC_Solver):
                                   tr_first,
                                   tr_second)
 
+    def visit_sequence_length(self, node, tr_sequence):
+        assert isinstance(node, Sequence_Length)
+        return self.solver.mkTerm(cvc5.Kind.SEQ_LENGTH, tr_sequence)
+
 
 ##############################################################################
 # SMTLIB
@@ -755,6 +815,20 @@ class Sort(Node):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_sort(self)
+
+
+class Parametric_Sort(Sort, metaclass=ABCMeta):
+    def __init__(self, name, *parameters):
+        super().__init__(name)
+        assert all(isinstance(parameter, Sort) for parameter in parameters)
+
+        self.parameters = parameters
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_parameters = [parameter.walk(visitor)
+                         for parameter in self.parameters]
+        return visitor.visit_parametric_sort(self, tr_parameters)
 
 
 BUILTIN_BOOLEAN = Sort("Bool")
@@ -847,6 +921,15 @@ class Enumeration(Sort):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_enumeration(self)
+
+
+class Sequence_Sort(Parametric_Sort):
+    def __init__(self, element_sort):
+        assert isinstance(element_sort, Sort)
+        super().__init__("Seq", element_sort)
+
+    def element_sort(self):
+        return self.parameters[0]
 
 
 ##############################################################################
@@ -1092,3 +1175,16 @@ class String_Predicate(Expression):
         return visitor.visit_string_predicate(self,
                                               self.first.walk(visitor),
                                               self.second.walk(visitor))
+
+
+class Sequence_Length(Expression):
+    def __init__(self, sequence):
+        assert isinstance(sequence, Expression)
+        assert isinstance(sequence.sort, Sequence_Sort)
+        super().__init__(BUILTIN_INTEGER)
+        self.sequence = sequence
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_sequence_length(self,
+                                             self.sequence.walk(visitor))
