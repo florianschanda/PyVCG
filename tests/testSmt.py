@@ -640,3 +640,73 @@ class SMTBasicTests(unittest.TestCase):
         )
         self.assertGreater(abs(self.values["a"] + self.values["b"]), 10)
         self.assertEqual(self.values["a"] * self.values["b"], Fraction(7, 3))
+
+    def test_Real_Conversions_To_Real(self):
+        sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Conversion_To_Real(
+                                         smt.Integer_Literal(-1)),
+                                     relevant=True))
+
+        sym_b = smt.Constant(smt.BUILTIN_REAL, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Conversion_To_Real(
+                                         smt.Integer_Literal(1)),
+                                     relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFLIRA)
+            (set-option :produce-models true)
+
+            (define-const a Real (to_real (- 1)))
+            (define-const b Real (to_real 1))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertValue("a", Fraction(-1, 1))
+        self.assertValue("b", Fraction(1))
+
+    def test_Real_Conversions_To_Int(self):
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Conversion_To_Integer(
+                                         "rtn",
+                                         smt.Real_Literal(Fraction(1, 2))),
+                                     relevant=True))
+
+        sym_b = smt.Constant(smt.BUILTIN_INTEGER, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Conversion_To_Integer(
+                                         "rna",
+                                         smt.Real_Literal(Fraction(1, 2))),
+                                     relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFLIRA)
+            (set-option :produce-models true)
+            (define-fun to_int_rna ((value Real)) Int
+              (ite (>= value 0)
+                   (to_int (+ value 0.5))
+                   (- (to_int (- 0.5 value)))))
+
+            (define-const a Int (to_int (/ 1 2)))
+            (define-const b Int (to_int_rna (/ 1 2)))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertValue("a", 0)
+        self.assertValue("b", 1)

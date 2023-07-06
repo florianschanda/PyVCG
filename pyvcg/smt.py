@@ -114,6 +114,14 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Comparison)
 
     @abstractmethod
+    def visit_conversion_to_real(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Real)
+
+    @abstractmethod
+    def visit_conversion_to_integer(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Integer)
+
+    @abstractmethod
     def visit_unary_int_arithmetic_op(self, node, tr_operand):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
 
@@ -294,6 +302,14 @@ class Logic_Visitor(Visitor):
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
 
+    def visit_conversion_to_real(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Real)
+
+    def visit_conversion_to_integer(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Integer)
+        if node.rounding == "rna":
+            self.functions.add("to_int_rna")
+
     def visit_unary_int_arithmetic_op(self, node, tr_operand):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
 
@@ -383,6 +399,13 @@ class SMTLIB_Generator(VC_Writer):
                 script.append("  (ite (< lhs 0)")
                 script.append("       (- (mod (- lhs) rhs))")
                 script.append("       (mod lhs rhs)))")
+
+            elif function == "to_int_rna":
+                script.append("(define-fun to_int_rna"
+                              " ((value Real)) Int")
+                script.append("  (ite (>= value 0)")
+                script.append("       (to_int (+ value 0.5))")
+                script.append("       (- (to_int (- 0.5 value)))))")
 
             else:
                 assert False
@@ -490,6 +513,18 @@ class SMTLIB_Generator(VC_Writer):
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
+
+    def visit_conversion_to_real(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Real)
+        return "(to_real %s)" % tr_value
+
+    def visit_conversion_to_integer(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Integer)
+        if node.rounding == "rtn":
+            return "(to_int %s)" % tr_value
+        else:
+            assert node.rounding == "rna"
+            return "(to_int_rna %s)" % tr_value
 
     def visit_unary_int_arithmetic_op(self, node, tr_operand):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
@@ -644,6 +679,33 @@ class CVC5_Solver(VC_Solver):
                                            lhs,
                                            rhs)))
 
+            elif function == "to_int_rna":
+                val = self.solver.mkVar(self.solver.getRealSort(),
+                                        "value")
+                fun = self.solver.defineFun(
+                    function,
+                    [val],
+                    self.solver.getIntegerSort(),
+                    self.solver.mkTerm(
+                        cvc5.Kind.ITE,
+                        self.solver.mkTerm(cvc5.Kind.GEQ,
+                                           val,
+                                           self.solver.mkReal(0, 1)),
+                        self.solver.mkTerm(
+                            cvc5.Kind.TO_INTEGER,
+                            self.solver.mkTerm(
+                                cvc5.Kind.ADD,
+                                val,
+                                self.solver.mkReal(1, 2))),
+                        self.solver.mkTerm(
+                            cvc5.Kind.NEG,
+                            self.solver.mkTerm(
+                                cvc5.Kind.TO_INTEGER,
+                                self.solver.mkTerm(
+                                    cvc5.Kind.SUB,
+                                    self.solver.mkReal(1, 2),
+                                    val)))))
+
             else:
                 assert False, function
 
@@ -777,6 +839,20 @@ class CVC5_Solver(VC_Solver):
                 "="  : cvc5.Kind.EQUAL}
 
         return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
+
+    def visit_conversion_to_real(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Real)
+        return self.solver.mkTerm(cvc5.Kind.TO_REAL, tr_value)
+
+    def visit_conversion_to_integer(self, node, tr_value):
+        assert isinstance(node, Conversion_To_Integer)
+        if node.rounding == "rtn":
+            return self.solver.mkTerm(cvc5.Kind.TO_INTEGER, tr_value)
+        else:
+            assert node.rounding == "rna"
+            return self.solver.mkTerm(cvc5.Kind.APPLY_UF,
+                                      self.function_mapping["to_int_rna"],
+                                      tr_value)
 
     def visit_unary_int_arithmetic_op(self, node, tr_operand):
         assert isinstance(node, Unary_Int_Arithmetic_Op)
@@ -1221,6 +1297,34 @@ class Comparison(Expression):
 ##############################################################################
 # Arithmetic & Functions
 ##############################################################################
+
+class Conversion_To_Real(Expression):
+    def __init__(self, value):
+        assert isinstance(value, Expression)
+        assert value.sort is BUILTIN_INTEGER
+        super().__init__(BUILTIN_REAL)
+        self.value = value
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_conversion_to_real(self,
+                                                self.value.walk(visitor))
+
+
+class Conversion_To_Integer(Expression):
+    def __init__(self, rounding, value):
+        assert rounding in ("rtn", "rna")
+        assert isinstance(value, Expression)
+        assert value.sort is BUILTIN_REAL
+        super().__init__(BUILTIN_INTEGER)
+        self.rounding = rounding
+        self.value    = value
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_conversion_to_integer(self,
+                                                   self.value.walk(visitor))
+
 
 class Unary_Int_Arithmetic_Op(Expression):
     def __init__(self, operator, operand):
