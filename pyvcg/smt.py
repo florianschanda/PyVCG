@@ -518,7 +518,7 @@ class CVC5_Solver(VC_Solver):
             return [self.term_to_python(sort.element_sort(), t)
                     for t in term.getSequenceValue()]
         else:
-            assert False, value.__class__.__name__
+            assert False, term.__class__.__name__
 
     def solve(self):
         result = self.solver.checkSat()
@@ -1224,6 +1224,7 @@ class Sequence_Length(Expression):
         return visitor.visit_sequence_length(self,
                                              self.sequence.walk(visitor))
 
+
 class Sequence_Index(Expression):
     def __init__(self, sequence, index):
         assert isinstance(sequence, Expression)
@@ -1239,6 +1240,7 @@ class Sequence_Index(Expression):
         return visitor.visit_sequence_index(self,
                                             self.sequence.walk(visitor),
                                             self.index.walk(visitor))
+
 
 class Sequence_Contains(Expression):
     def __init__(self, sequence, item):
