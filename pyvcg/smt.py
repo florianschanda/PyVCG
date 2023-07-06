@@ -623,7 +623,10 @@ class CVC5_Solver(VC_Solver):
         elif sort.name == "Int":
             return term.getIntegerValue()
         elif sort.name == "Real":
-            return term.getRealValue()
+            if term.isRealValue():
+                return term.getRealValue()
+            else:  # pragma: no cover
+                return None
         elif sort.name == "String":
             return term.getStringValue()
         elif sort.name == "Seq":
