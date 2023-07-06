@@ -106,6 +106,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(tr_terms, list)
 
     @abstractmethod
+    def visit_exclusive_disjunction(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Exclusive_Disjunction)
+
+    @abstractmethod
     def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
         assert isinstance(node, Implication)
 
@@ -146,6 +150,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, String_Predicate)
 
     @abstractmethod
+    def visit_string_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, String_Concatenation)
+
+    @abstractmethod
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
 
@@ -156,6 +164,10 @@ class Visitor(metaclass=ABCMeta):
     @abstractmethod
     def visit_sequence_contains(self, node, tr_sequence, tr_item):
         assert isinstance(node, Sequence_Contains)
+
+    @abstractmethod
+    def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Sequence_Concatenation)
 
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
@@ -296,6 +308,9 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Disjunction)
         assert isinstance(tr_terms, list)
 
+    def visit_exclusive_disjunction(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Exclusive_Disjunction)
+
     def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
         assert isinstance(node, Implication)
 
@@ -344,6 +359,10 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, String_Predicate)
         self.logics.add("strings")
 
+    def visit_string_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, String_Concatenation)
+        self.logics.add("strings")
+
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
         self.logics.add("sequences")
@@ -354,6 +373,10 @@ class Logic_Visitor(Visitor):
 
     def visit_sequence_contains(self, node, tr_sequence, tr_item):
         assert isinstance(node, Sequence_Contains)
+        self.logics.add("sequences")
+
+    def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Sequence_Concatenation)
         self.logics.add("sequences")
 
 
@@ -506,6 +529,10 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(tr_terms, list)
         return "(or %s)" % " ".join(tr_terms)
 
+    def visit_exclusive_disjunction(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Exclusive_Disjunction)
+        return "(xor %s %s)" % (tr_lhs, tr_rhs)
+
     def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
         assert isinstance(node, Implication)
         return "(=> %s %s)" % (tr_lhs, tr_rhs)
@@ -550,6 +577,10 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, String_Predicate)
         return "(str.%s %s %s)" % (node.operation, tr_first, tr_second)
 
+    def visit_string_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, String_Concatenation)
+        return "(str.++ %s %s)" % (tr_lhs, tr_rhs)
+
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
         return "(seq.len %s)" % tr_sequence
@@ -561,6 +592,10 @@ class SMTLIB_Generator(VC_Writer):
     def visit_sequence_contains(self, node, tr_sequence, tr_item):
         assert isinstance(node, Sequence_Contains)
         return "(seq.contains %s (seq.unit %s))" % (tr_sequence, tr_item)
+
+    def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Sequence_Concatenation)
+        return "(seq.++ %s %s)" % (tr_lhs, tr_rhs)
 
 
 class CVC5_Solver(VC_Solver):
@@ -824,6 +859,11 @@ class CVC5_Solver(VC_Solver):
 
         return self.solver.mkTerm(cvc5.Kind.OR, *tr_terms)
 
+    def visit_exclusive_disjunction(self, node, tr_sort, tr_lhs, tr_rhs):
+        assert isinstance(node, Exclusive_Disjunction)
+
+        return self.solver.mkTerm(cvc5.Kind.XOR, tr_lhs, tr_rhs)
+
     def visit_implication(self, node, tr_sort, tr_lhs, tr_rhs):
         assert isinstance(node, Implication)
 
@@ -912,6 +952,10 @@ class CVC5_Solver(VC_Solver):
                                   tr_first,
                                   tr_second)
 
+    def visit_string_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, String_Concatenation)
+        return self.solver.mkTerm(cvc5.Kind.STRING_CONCAT, tr_lhs, tr_rhs)
+
     def visit_sequence_length(self, node, tr_sequence):
         assert isinstance(node, Sequence_Length)
         return self.solver.mkTerm(cvc5.Kind.SEQ_LENGTH, tr_sequence)
@@ -926,6 +970,10 @@ class CVC5_Solver(VC_Solver):
                                   tr_sequence,
                                   self.solver.mkTerm(cvc5.Kind.SEQ_UNIT,
                                                      tr_item))
+
+    def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
+        assert isinstance(node, Sequence_Concatenation)
+        return self.solver.mkTerm(cvc5.Kind.SEQ_CONCAT, tr_lhs, tr_rhs)
 
 
 ##############################################################################
@@ -1254,6 +1302,23 @@ class Disjunction(Expression):
                                          tr_terms)
 
 
+class Exclusive_Disjunction(Expression):
+    def __init__(self, lhs, rhs):
+        assert isinstance(lhs, Expression) and lhs.sort is BUILTIN_BOOLEAN
+        assert isinstance(rhs, Expression) and rhs.sort is BUILTIN_BOOLEAN
+        super().__init__(BUILTIN_BOOLEAN)
+
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_exclusive_disjunction(self,
+                                                   self.sort.walk(visitor),
+                                                   self.lhs.walk(visitor),
+                                                   self.rhs.walk(visitor))
+
+
 class Implication(Expression):
     def __init__(self, lhs, rhs):
         assert isinstance(lhs, Expression) and lhs.sort is BUILTIN_BOOLEAN
@@ -1430,6 +1495,23 @@ class String_Predicate(Expression):
                                               self.second.walk(visitor))
 
 
+class String_Concatenation(Expression):
+    def __init__(self, lhs, rhs):
+        assert isinstance(lhs, Expression)
+        assert lhs.sort is BUILTIN_STRING
+        assert isinstance(rhs, Expression)
+        assert rhs.sort is BUILTIN_STRING
+        super().__init__(BUILTIN_STRING)
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_string_concatenation(self,
+                                                  self.lhs.walk(visitor),
+                                                  self.rhs.walk(visitor))
+
+
 class Sequence_Length(Expression):
     def __init__(self, sequence):
         assert isinstance(sequence, Expression)
@@ -1475,3 +1557,20 @@ class Sequence_Contains(Expression):
         return visitor.visit_sequence_contains(self,
                                                self.sequence.walk(visitor),
                                                self.item.walk(visitor))
+
+
+class Sequence_Concatenation(Expression):
+    def __init__(self, lhs, rhs):
+        assert isinstance(lhs, Expression)
+        assert isinstance(lhs.sort, Sequence_Sort)
+        assert isinstance(rhs, Expression)
+        assert lhs.sort is rhs.sort
+        super().__init__(lhs.sort)
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_sequence_concatenation(self,
+                                                    self.lhs.walk(visitor),
+                                                    self.rhs.walk(visitor))

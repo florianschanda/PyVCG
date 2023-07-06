@@ -272,6 +272,7 @@ class SMTBasicTests(unittest.TestCase):
         sym_a = smt.Constant(smt.BUILTIN_BOOLEAN, "a")
         sym_b = smt.Constant(smt.BUILTIN_BOOLEAN, "b")
         sym_c = smt.Constant(smt.BUILTIN_BOOLEAN, "c")
+        sym_d = smt.Constant(smt.BUILTIN_BOOLEAN, "d")
 
         self.script.add_statement(
             smt.Constant_Declaration(sym_a, relevant=True))
@@ -279,6 +280,8 @@ class SMTBasicTests(unittest.TestCase):
             smt.Constant_Declaration(sym_b, relevant=True))
         self.script.add_statement(
             smt.Constant_Declaration(sym_c, relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_d, relevant=True))
 
         self.script.add_statement(
             smt.Assertion(
@@ -288,6 +291,9 @@ class SMTBasicTests(unittest.TestCase):
         self.script.add_statement(
             smt.Assertion(
                 smt.Implication(sym_a, sym_c)))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Exclusive_Disjunction(sym_a, sym_d)))
 
         self.assertResult(
             "sat",
@@ -298,12 +304,15 @@ class SMTBasicTests(unittest.TestCase):
             (declare-const a Bool)
             (declare-const b Bool)
             (declare-const c Bool)
+            (declare-const d Bool)
             (assert (and (or a b) (or b c)))
             (assert (=> a c))
+            (assert (xor a d))
             (check-sat)
             (get-value (a))
             (get-value (b))
             (get-value (c))
+            (get-value (d))
             (exit)
             """
         )
@@ -504,8 +513,13 @@ class SMTBasicTests(unittest.TestCase):
 
     def test_String_Predicates(self):
         sym_a = smt.Constant(smt.BUILTIN_STRING, "a")
+        sym_b = smt.Constant(smt.BUILTIN_STRING, "b")
         self.script.add_statement(
             smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.String_Concatenation(sym_a, sym_a),
                                      relevant=True))
 
         self.script.add_statement(
@@ -540,12 +554,14 @@ class SMTBasicTests(unittest.TestCase):
             (set-option :produce-models true)
 
             (declare-const a String)
+            (define-const b String (str.++ a a))
             (assert (>= (str.len a) 10))
             (assert (str.prefixof "foo" a))
             (assert (str.suffixof "bar" a))
             (assert (not (str.contains a "A")))
             (check-sat)
             (get-value (a))
+            (get-value (b))
             (exit)
             """
         )
@@ -555,6 +571,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertTrue(self.values["a"].endswith("bar"),
                         self.values["a"])
         self.assertNotIn("A", self.values["a"])
+        self.assertValue("b", self.values["a"] + self.values["a"])
 
     def test_Sequences(self):
         sort = smt.Sequence_Sort(smt.BUILTIN_INTEGER)
@@ -562,6 +579,13 @@ class SMTBasicTests(unittest.TestCase):
         self.script.add_statement(
             smt.Constant_Declaration(sym_a,
                                      relevant=True))
+
+        sym_b = smt.Constant(sort, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Sequence_Concatenation(sym_a, sym_a),
+                                     relevant=True))
+
         self.script.add_statement(
             smt.Assertion(
                 smt.Comparison(">",
@@ -584,17 +608,21 @@ class SMTBasicTests(unittest.TestCase):
             (set-option :produce-models true)
 
             (declare-const a (Seq Int))
+            (define-const b (Seq Int) (seq.++ a a))
             (assert (> (seq.len a) 10))
             (assert (seq.contains a (seq.unit 42)))
             (assert (= (seq.nth a 3) 123))
             (check-sat)
             (get-value (a))
+            (get-value (b))
             (exit)
             """
         )
         self.assertGreater(len(self.values["a"]), 10)
         self.assertIn(42, self.values["a"])
         self.assertEqual(self.values["a"][3], 123)
+        self.assertSequenceEqual(self.values["a"] + self.values["a"],
+                                 self.values["b"])
 
     def test_Real_Operations(self):
         sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
