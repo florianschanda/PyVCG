@@ -738,3 +738,121 @@ class SMTBasicTests(unittest.TestCase):
         )
         self.assertValue("a", 0)
         self.assertValue("b", 1)
+
+    def test_Real_Operations(self):
+        sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
+        sym_b = smt.Constant(smt.BUILTIN_REAL, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(">",
+                               smt.Unary_Real_Arithmetic_Op(
+                                   "abs",
+                                   smt.Binary_Real_Arithmetic_Op("+",
+                                                                 sym_a,
+                                                                 sym_b)),
+                               smt.Real_Literal(10))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Binary_Real_Arithmetic_Op("*",
+                                                             sym_a,
+                                                             sym_b),
+                               smt.Real_Literal(Fraction(7, 3)))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFNRA)
+            (set-option :produce-models true)
+
+            (declare-const a Real)
+            (declare-const b Real)
+            (assert (> (abs (+ a b)) (/ 10 1)))
+            (assert (= (* a b) (/ 7 3)))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertGreater(abs(self.values["a"] + self.values["b"]), 10)
+        self.assertEqual(self.values["a"] * self.values["b"], Fraction(7, 3))
+
+    def test_Real_Conversions_To_Real(self):
+        sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Conversion_To_Real(
+                                         smt.Integer_Literal(-1)),
+                                     relevant=True))
+
+        sym_b = smt.Constant(smt.BUILTIN_REAL, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Conversion_To_Real(
+                                         smt.Integer_Literal(1)),
+                                     relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFLIRA)
+            (set-option :produce-models true)
+
+            (define-const a Real (to_real (- 1)))
+            (define-const b Real (to_real 1))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertValue("a", Fraction(-1, 1))
+        self.assertValue("b", Fraction(1))
+
+    def test_Quantification(self):
+        sym_s = smt.Constant(smt.Sequence_Sort(smt.BUILTIN_INTEGER),
+                             "arr")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_s,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Assertion(smt.Comparison("=",
+                                         smt.Sequence_Length(sym_s),
+                                         smt.Integer_Literal(10))))
+
+        s_var = smt.Bound_Variable(smt.BUILTIN_INTEGER, "i")
+        s_guard = smt.Conjunction(
+            smt.Comparison(">=", s_var, smt.Integer_Literal(3)),
+            smt.Comparison("<=", s_var, smt.Integer_Literal(6)))
+        s_body = smt.Comparison("=",
+                                smt.Sequence_Index(sym_s,
+                                                   s_var),
+                                smt.Integer_Literal(42))
+
+        s_quant = smt.Quantifier("forall",
+                                 [s_var],
+                                 smt.Implication(s_guard, s_body))
+        self.script.add_statement(smt.Assertion(s_quant))
+
+        self.assertResult(
+            "unknown",
+            """
+            (set-logic UFSLIA)
+            (set-option :produce-models true)
+
+            (declare-const arr (Seq Int))
+            (assert (= (seq.len arr) 10))
+            (assert (forall ((i Int))
+              (=> (and (>= i 3) (<= i 6)) (= (seq.nth arr i) 42))))
+            (check-sat)
+            (get-value (arr))
+            (exit)
+            """
+        )

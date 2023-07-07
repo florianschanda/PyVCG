@@ -92,6 +92,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Constant)
 
     @abstractmethod
+    def visit_bound_variable(self, node, tr_sort):
+        assert isinstance(node, Bound_Variable)
+
+    @abstractmethod
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
 
@@ -169,6 +173,10 @@ class Visitor(metaclass=ABCMeta):
     def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Sequence_Concatenation)
 
+    @abstractmethod
+    def visit_quantifier(self, node, tr_variables, tr_body):
+        assert isinstance(node, Quantifier)
+
 
 class VC_Writer(Visitor, metaclass=ABCMeta):
     pass
@@ -205,7 +213,7 @@ class Logic_Visitor(Visitor):
         assert not self.logics or self.logics < allowed_logics, \
             "%s is not a permitted logic" % (self.logics - allowed_logics)
 
-        if "quant" in self.logics:  # pragma: no cover
+        if "quant" in self.logics:
             logic = ""
         else:
             logic = "QF_"
@@ -297,6 +305,9 @@ class Logic_Visitor(Visitor):
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, Constant)
 
+    def visit_bound_variable(self, node, tr_sort):
+        assert isinstance(node, Bound_Variable)
+
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
 
@@ -378,6 +389,10 @@ class Logic_Visitor(Visitor):
     def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Sequence_Concatenation)
         self.logics.add("sequences")
+
+    def visit_quantifier(self, node, tr_variables, tr_body):
+        assert isinstance(node, Quantifier)
+        self.logics.add("quant")
 
 
 class SMTLIB_Generator(VC_Writer):
@@ -515,6 +530,10 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Constant)
         return self.emit_name(node.name)
 
+    def visit_bound_variable(self, node, tr_sort):
+        assert isinstance(node, Bound_Variable)
+        return self.emit_name(node.name)
+
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
         return "(not %s)" % tr_expression
@@ -597,6 +616,14 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Sequence_Concatenation)
         return "(seq.++ %s %s)" % (tr_lhs, tr_rhs)
 
+    def visit_quantifier(self, node, tr_variables, tr_body):
+        assert isinstance(node, Quantifier)
+        return "(%s (%s)\n  %s)" % (node.kind,
+                                    " ".join("(%s %s)" % (var.name,
+                                                          var.sort.walk(self))
+                                             for var in node.variables),
+                                    tr_body)
+
 
 class CVC5_Solver(VC_Solver):
     def __init__(self):
@@ -605,6 +632,7 @@ class CVC5_Solver(VC_Solver):
         self.values  = {}
 
         self.const_mapping    = {}
+        self.var_mapping      = {}
         self.enum_mapping     = {}
         self.literal_mapping  = {}
         self.function_mapping = {}
@@ -845,6 +873,14 @@ class CVC5_Solver(VC_Solver):
 
         return self.const_mapping[node]
 
+    def visit_bound_variable(self, node, tr_sort):
+        assert isinstance(node, Bound_Variable)
+
+        if node not in self.var_mapping:
+            self.var_mapping[node] = self.solver.mkVar(tr_sort, node.name)
+
+        return self.var_mapping[node]
+
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, Boolean_Negation)
 
@@ -977,6 +1013,17 @@ class CVC5_Solver(VC_Solver):
     def visit_sequence_concatenation(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Sequence_Concatenation)
         return self.solver.mkTerm(cvc5.Kind.SEQ_CONCAT, tr_lhs, tr_rhs)
+
+    def visit_quantifier(self, node, tr_variables, tr_body):
+        assert isinstance(node, Quantifier)
+
+        kind = {"forall" : cvc5.Kind.FORALL,
+                "exists" : cvc5.Kind.EXISTS}
+
+        return self.solver.mkTerm(kind[node.kind],
+                                  self.solver.mkTerm(cvc5.Kind.VARIABLE_LIST,
+                                                     *tr_variables),
+                                  tr_body)
 
 
 ##############################################################################
@@ -1247,6 +1294,17 @@ class Constant(Expression):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_constant(self, self.sort.walk(visitor))
+
+
+class Bound_Variable(Expression):
+    def __init__(self, sort, name):
+        super().__init__(sort)
+        assert isinstance(name, str) and "|" not in name
+        self.name = name
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_bound_variable(self, self.sort.walk(visitor))
 
 
 ##############################################################################
@@ -1577,3 +1635,28 @@ class Sequence_Concatenation(Expression):
         return visitor.visit_sequence_concatenation(self,
                                                     self.lhs.walk(visitor),
                                                     self.rhs.walk(visitor))
+
+
+##############################################################################
+# Quantifiers
+##############################################################################
+
+
+class Quantifier(Expression):
+    def __init__(self, kind, variables, body):
+        assert kind in ("forall", "exists")
+        assert isinstance(variables, list)
+        assert all(isinstance(var, Bound_Variable) for var in variables)
+        assert isinstance(body, Expression)
+        assert body.sort is BUILTIN_BOOLEAN
+        super().__init__(BUILTIN_BOOLEAN)
+        self.kind      = kind
+        self.variables = variables
+        self.body      = body
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_variables = [var.walk(visitor) for var in self.variables]
+        return visitor.visit_quantifier(self,
+                                        tr_variables,
+                                        self.body.walk(visitor))
