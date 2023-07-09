@@ -672,7 +672,6 @@ class CVC5_Solver(VC_Solver):
             return
         else:  # pragma: no cover
             self.result = "unknown"
-            return
 
         for constant in self.relevant_values:
             value = self.solver.getValue(self.const_mapping[constant])
