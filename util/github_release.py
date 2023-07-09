@@ -22,10 +22,47 @@
 ##                                                                          ##
 ##############################################################################
 
-VERSION_TUPLE = (1, 0, 0)
-VERSION_SUFFIX = "dev"
+# This helper script tags a release using the GitHub API.
+#
+# https://docs.github.com/en/rest/reference/repos#create-a-release
 
-PYVCG_VERSION = ("%u.%u.%u" % VERSION_TUPLE) + \
-    ("-%s" % VERSION_SUFFIX if VERSION_SUFFIX else "")
+import os
+import sys
+import json
 
-FULL_NAME = "PyVCG %s" % PYVCG_VERSION
+import requests
+
+from pyvcg.version import PYVCG_VERSION
+import util.changelog
+
+def main():
+    username = os.environ.get("GITHUB_USERNAME", None)
+    if username is None:
+        print("Please set the GITHUB_USERNAME environment variable")
+
+    token = os.environ.get("GITHUB_PYVCG_TOKEN", None)
+    if token is None:
+        print("Please set the GITHUB_PYVCG_TOKEN environment variable")
+
+    if username is None or token is None:
+        sys.exit(1)
+
+    auth = requests.auth.HTTPBasicAuth(username, token)
+
+    api_endpoint = "https://api.github.com/repos/%s/%s/releases" % \
+        ("florianschanda", "pyvcg")
+
+    tag_name = "pyvcg-%s" % PYVCG_VERSION
+    rel_name = "Release %s" % PYVCG_VERSION
+    rel_body = "### %s\n\n%s" % (PYVCG_VERSION,
+                                 util.changelog.current_section())
+
+    data = {"tag_name" : tag_name,
+            "name"     : rel_name,
+            "body"     : rel_body}
+
+    r = requests.post(api_endpoint, auth=auth, data=json.dumps(data))
+    print(r)
+
+if __name__ == "__main__":
+    main()

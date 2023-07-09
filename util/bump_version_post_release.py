@@ -22,10 +22,40 @@
 ##                                                                          ##
 ##############################################################################
 
-VERSION_TUPLE = (1, 0, 0)
-VERSION_SUFFIX = "dev"
+import os
 
-PYVCG_VERSION = ("%u.%u.%u" % VERSION_TUPLE) + \
-    ("-%s" % VERSION_SUFFIX if VERSION_SUFFIX else "")
+import util.changelog
 
-FULL_NAME = "PyVCG %s" % PYVCG_VERSION
+from pyvcg.version import VERSION_TUPLE
+
+major, minor, release = VERSION_TUPLE
+release += 1
+
+# Bump version and update version.py
+
+VERSION_FILE = os.path.join("pyvcg", "pyvcg.py")
+
+tmp = ""
+with open(VERSION_FILE, "r") as fd:
+    for raw_line in fd:
+        if raw_line.startswith("VERSION_TUPLE"):
+            raw_line = 'VERSION_TUPLE = (%u, %u, %u)\n' % (major,
+                                                           minor,
+                                                           release)
+        elif raw_line.startswith("VERSION_SUFFIX"):
+            raw_line = 'VERSION_SUFFIX = "dev"\n'
+
+        tmp += raw_line
+with open(VERSION_FILE, "w") as fd:
+    fd.write(tmp)
+
+PYVCG_VERSION = "%u.%u.%u-dev" % (major, minor, release)
+
+# Update changelog and docs, adding a new entry
+
+util.changelog.add_new_section(PYVCG_VERSION)
+
+# Assemble commit
+
+os.system("git add pyvcg/version.py CHANGELOG.md")
+os.system('git commit -m "Bump version to %s after release"' % PYVCG_VERSION)

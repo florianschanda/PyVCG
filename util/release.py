@@ -22,10 +22,37 @@
 ##                                                                          ##
 ##############################################################################
 
-VERSION_TUPLE = (1, 0, 0)
-VERSION_SUFFIX = "dev"
+# Helper script to remove "-dev" from current version; update
+# changelog/docs; and commit.
 
-PYVCG_VERSION = ("%u.%u.%u" % VERSION_TUPLE) + \
-    ("-%s" % VERSION_SUFFIX if VERSION_SUFFIX else "")
+import os
 
-FULL_NAME = "PyVCG %s" % PYVCG_VERSION
+import util.changelog
+
+# Update version.py to remove the -dev (or if given) use a different
+# version number.
+
+VERSION_FILE = os.path.join("pyvcg", "version.py")
+
+tmp = ""
+with open(VERSION_FILE, "r") as fd:
+    for raw_line in fd:
+        if raw_line.startswith("VERSION_SUFFIX"):
+            raw_line = 'VERSION_SUFFIX = ""\n'
+        tmp += raw_line
+
+with open(VERSION_FILE, "w") as fd:
+    fd.write(tmp)
+
+from pyvcg.version import PYVCG_VERSION
+print(PYVCG_VERSION)
+
+# Update last CHANGELOG entry and documentation to use the new
+# version.
+
+util.changelog.set_current_title(PYVCG_VERSION)
+
+# Commit
+
+os.system("git add CHANGELOG.md pyvcg/version.py")
+os.system('git commit -m "PyVCG Release %s"' % PYVCG_VERSION)

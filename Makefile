@@ -20,5 +20,6 @@ lint: style
 		--score=no \
 		--extension-pkg-allow-list=cvc5
 
-wheel:
-	@python3 setup.py bdist_wheel
+package:
+	@git clean -xdf
+	@python3 setup.py sdist bdist_wheel
