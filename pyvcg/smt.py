@@ -55,6 +55,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Enumeration_Declaration)
 
     @abstractmethod
+    def visit_record_declaration(self, node):
+        assert isinstance(node, Record_Declaration)
+
+    @abstractmethod
     def visit_sort(self, node):
         assert isinstance(node, Sort)
 
@@ -66,6 +70,10 @@ class Visitor(metaclass=ABCMeta):
     @abstractmethod
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
+
+    @abstractmethod
+    def visit_record(self, node):
+        assert isinstance(node, Record)
 
     @abstractmethod
     def visit_boolean_literal(self, node, tr_sort):
@@ -174,6 +182,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Sequence_Concatenation)
 
     @abstractmethod
+    def visit_record_access(self, node, tr_record):
+        assert isinstance(node, Record_Access)
+
+    @abstractmethod
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
 
@@ -259,6 +271,11 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Enumeration_Declaration)
         self.logics.add("datatypes")
 
+    def visit_record_declaration(self, node):
+        assert isinstance(node, Record_Declaration)
+        self.logics.add("datatypes")
+        node.sort.walk(self)
+
     def visit_sort(self, node):
         assert isinstance(node, Sort)
         if node.name == "Bool":
@@ -284,6 +301,12 @@ class Logic_Visitor(Visitor):
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
         self.logics.add("datatypes")
+
+    def visit_record(self, node):
+        assert isinstance(node, Record)
+        self.logics.add("datatypes")
+        for sort in node.components.values():
+            sort.walk(self)
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
@@ -390,6 +413,10 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Sequence_Concatenation)
         self.logics.add("sequences")
 
+    def visit_record_access(self, node, tr_record):
+        assert isinstance(node, Record_Access)
+        self.logics.add("datatypes")
+
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
         self.logics.add("quant")
@@ -488,6 +515,15 @@ class SMTLIB_Generator(VC_Writer):
                            " ".join("(%s)" % literal
                                     for literal in node.sort.literals)))
 
+    def visit_record_declaration(self, node):
+        assert isinstance(node, Record_Declaration)
+        self.emit_comment(node.comment)
+        self.lines.append("(declare-datatype %s ((%s__cons" % (node.sort.name,
+                                                              node.sort.name))
+        for name, sort in node.sort.components.items():
+            self.lines.append("  (%s %s)" % (name, sort.walk(self)))
+        self.lines[-1] += ")))"
+
     def visit_sort(self, node):
         assert isinstance(node, Sort)
         return node.name
@@ -499,6 +535,10 @@ class SMTLIB_Generator(VC_Writer):
 
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
+        return node.name
+
+    def visit_record(self, node):
+        assert isinstance(node, Record)
         return node.name
 
     def visit_boolean_literal(self, node, tr_sort):
@@ -616,6 +656,10 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Sequence_Concatenation)
         return "(seq.++ %s %s)" % (tr_lhs, tr_rhs)
 
+    def visit_record_access(self, node, tr_record):
+        assert isinstance(node, Record_Access)
+        return "(%s %s)" % (node.component, tr_record)
+
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
         return "(%s (%s)\n  %s)" % (node.kind,
@@ -637,6 +681,7 @@ class CVC5_Solver(VC_Solver):
         self.literal_mapping  = {}
         self.function_mapping = {}
         self.sort_mapping     = {}
+        self.record_mapping   = {}
 
         self.relevant_values  = []
 
@@ -646,6 +691,13 @@ class CVC5_Solver(VC_Solver):
 
         if isinstance(sort, Enumeration):
             return str(term)
+        elif isinstance(sort, Record):
+            assert term.getKind() == cvc5.Kind.APPLY_CONSTRUCTOR
+            rv = {}
+            for idx, name in enumerate(sort.components, 1):
+                rv[name] = self.term_to_python(sort.components[name],
+                                               term[idx])
+            return rv
         elif sort.name == "Bool":
             return term.getBooleanValue()
         elif sort.name == "Int":
@@ -661,7 +713,7 @@ class CVC5_Solver(VC_Solver):
             return [self.term_to_python(sort.element_sort(), t)
                     for t in term.getSequenceValue()]
         else:
-            assert False, term.__class__.__name__
+            assert False, (term.getKind(), term.__class__.__name__)
 
     def solve(self):
         result = self.solver.checkSat()
@@ -810,6 +862,17 @@ class CVC5_Solver(VC_Solver):
             for literal in node.sort.literals
         }
 
+    def visit_record_declaration(self, node):
+        assert isinstance(node, Record_Declaration)
+
+        ctor = self.solver.mkDatatypeConstructorDecl(node.sort.name +
+                                                     "__cons")
+        for name, sort in node.sort.components.items():
+            ctor.addSelector(name, sort.walk(self))
+
+        sort = self.solver.declareDatatype(node.sort.name, ctor)
+        self.record_mapping[node.sort] = sort
+
     def visit_sort(self, node):
         assert isinstance(node, Sort)
 
@@ -841,6 +904,10 @@ class CVC5_Solver(VC_Solver):
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
         return self.enum_mapping[node]
+
+    def visit_record(self, node):
+        assert isinstance(node, Record)
+        return self.record_mapping[node]
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
@@ -1013,6 +1080,15 @@ class CVC5_Solver(VC_Solver):
         assert isinstance(node, Sequence_Concatenation)
         return self.solver.mkTerm(cvc5.Kind.SEQ_CONCAT, tr_lhs, tr_rhs)
 
+    def visit_record_access(self, node, tr_record):
+        assert isinstance(node, Record_Access)
+        assert node.record.sort in self.record_mapping
+        s_record_sort = self.record_mapping[node.record.sort]
+        s_selector = s_record_sort.getDatatype().getSelector(node.component)
+        return self.solver.mkTerm(cvc5.Kind.APPLY_SELECTOR,
+                                  s_selector.getTerm(),
+                                  tr_record)
+
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
 
@@ -1174,6 +1250,17 @@ class Enumeration_Declaration(Statement):
         return visitor.visit_enumeration_declaration(self)
 
 
+class Record_Declaration(Statement):
+    def __init__(self, sort, comment=None):
+        super().__init__(comment)
+        assert isinstance(sort, Record)
+        self.sort = sort
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_record_declaration(self)
+
+
 ##############################################################################
 # Sorts
 ##############################################################################
@@ -1192,6 +1279,23 @@ class Enumeration(Sort):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_enumeration(self)
+
+
+class Record(Sort):
+    def __init__(self, name):
+        super().__init__(name)
+        self.components  = {}
+
+    def add_component(self, name, sort):
+        assert isinstance(name, str)
+        assert isinstance(sort, Sort)
+        assert name not in self.components
+
+        self.components[name] = sort
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_record(self)
 
 
 class Sequence_Sort(Parametric_Sort):
@@ -1634,6 +1738,23 @@ class Sequence_Concatenation(Expression):
         return visitor.visit_sequence_concatenation(self,
                                                     self.lhs.walk(visitor),
                                                     self.rhs.walk(visitor))
+
+
+class Record_Access(Expression):
+    def __init__(self, record, component):
+        assert isinstance(record, Expression)
+        assert isinstance(record.sort, Record)
+        assert isinstance(component, str)
+        assert component in record.sort.components
+        super().__init__(record.sort.components[component])
+        self.record    = record
+        self.component = component
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_record_access(self,
+                                           self.record.walk(visitor))
+
 
 
 ##############################################################################

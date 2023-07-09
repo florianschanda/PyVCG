@@ -856,3 +856,44 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
+
+    def test_Records(self):
+        s_sort = smt.Record("Kitten")
+        s_sort.add_component("legs", smt.BUILTIN_INTEGER)
+        s_sort.add_component("name", smt.BUILTIN_STRING)
+        self.script.add_statement(smt.Record_Declaration(s_sort))
+
+        s_rec = smt.Constant(s_sort, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(s_rec,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(s_rec, "legs"),
+                               smt.Integer_Literal (4))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(s_rec, "name"),
+                               smt.String_Literal("fuzzy"))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFDTSLIA)
+            (set-option :produce-models true)
+
+            (declare-datatype Kitten ((Kitten__cons
+              (legs Int)
+              (name String))))
+            (declare-const a Kitten)
+            (assert (= (legs a) 4))
+            (assert (= (name a) "fuzzy"))
+            (check-sat)
+            (get-value (a))
+            (exit)
+            """
+        )
+        self.assertValue("a", {"name": "fuzzy",
+                               "legs": 4})
