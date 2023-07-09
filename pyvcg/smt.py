@@ -511,35 +511,37 @@ class SMTLIB_Generator(VC_Writer):
         assert isinstance(node, Enumeration_Declaration)
         self.emit_comment(node.comment)
         self.lines.append("(declare-datatype %s (%s))" %
-                          (node.sort.name,
+                          (self.emit_name(node.sort.name),
                            " ".join("(%s)" % literal
                                     for literal in node.sort.literals)))
 
     def visit_record_declaration(self, node):
         assert isinstance(node, Record_Declaration)
         self.emit_comment(node.comment)
-        self.lines.append("(declare-datatype %s ((%s__cons" % (node.sort.name,
-                                                              node.sort.name))
+        self.lines.append("(declare-datatype %s ((%s" %
+                          (self.emit_name(node.sort.name),
+                           self.emit_name(node.sort.name + "__cons")))
         for name, sort in node.sort.components.items():
-            self.lines.append("  (%s %s)" % (name, sort.walk(self)))
+            self.lines.append("  (%s %s)" % (self.emit_name(name),
+                                             sort.walk(self)))
         self.lines[-1] += ")))"
 
     def visit_sort(self, node):
         assert isinstance(node, Sort)
-        return node.name
+        return self.emit_name(node.name)
 
     def visit_parametric_sort(self, node, tr_parameters):
         assert isinstance(node, Parametric_Sort)
         assert isinstance(tr_parameters, list)
-        return "(%s %s)" % (node.name, " ".join(tr_parameters))
+        return "(%s %s)" % (self.emit_name(node.name), " ".join(tr_parameters))
 
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
-        return node.name
+        return self.emit_name(node.name)
 
     def visit_record(self, node):
         assert isinstance(node, Record)
-        return node.name
+        return self.emit_name(node.name)
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
@@ -662,11 +664,12 @@ class SMTLIB_Generator(VC_Writer):
 
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
-        return "(%s (%s)\n  %s)" % (node.kind,
-                                    " ".join("(%s %s)" % (var.name,
-                                                          var.sort.walk(self))
-                                             for var in node.variables),
-                                    tr_body)
+        return "(%s (%s)\n  %s)" % (
+            node.kind,
+            " ".join("(%s %s)" % (self.emit_name(var.name),
+                                  var.sort.walk(self))
+                     for var in node.variables),
+            tr_body)
 
 
 class CVC5_Solver(VC_Solver):
