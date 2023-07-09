@@ -5,6 +5,8 @@ from io import StringIO
 from fractions import Fraction
 
 from pyvcg import smt
+from pyvcg.driver.file_smtlib import SMTLIB_Generator
+from pyvcg.driver.cvc5_api import CVC5_Solver
 
 
 class SMTBasicTests(unittest.TestCase):
@@ -17,8 +19,8 @@ class SMTBasicTests(unittest.TestCase):
     def assertResult(self, status, string):
         assert status in ("sat", "unsat", "unknown")
 
-        self.smtlib = self.script.generate_vc(smt.SMTLIB_Generator())
-        self.result, self.values = self.script.solve_vc(smt.CVC5_Solver())
+        self.smtlib = self.script.generate_vc(SMTLIB_Generator())
+        self.result, self.values = self.script.solve_vc(CVC5_Solver())
 
         # Verify SMTLIB output
         string = "\n".join(s.strip() for s in string.strip().splitlines())
@@ -871,7 +873,7 @@ class SMTBasicTests(unittest.TestCase):
             smt.Assertion(
                 smt.Comparison("=",
                                smt.Record_Access(s_rec, "legs"),
-                               smt.Integer_Literal (4))))
+                               smt.Integer_Literal(4))))
         self.script.add_statement(
             smt.Assertion(
                 smt.Comparison("=",

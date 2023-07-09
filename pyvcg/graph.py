@@ -25,6 +25,7 @@
 import html
 
 from pyvcg import smt
+from pyvcg.driver.file_smtlib import SMTLIB_Generator
 
 
 class DAG:
@@ -36,7 +37,7 @@ class DAG:
     def debug_render_dot(self):
         dot = ["digraph {"]
         for node in self.nodes:
-            writer = smt.SMTLIB_Generator()
+            writer = SMTLIB_Generator()
             if isinstance(node, Check):
                 for check in node.goals:
                     if check["comment"]:

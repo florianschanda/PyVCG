@@ -9,6 +9,8 @@ from fractions import Fraction
 from pyvcg import smt
 from pyvcg import graph
 from pyvcg import vcg
+from pyvcg.driver.file_smtlib import SMTLIB_Generator
+from pyvcg.driver.cvc5_api import CVC5_Solver
 
 
 class SimpleVCG(unittest.TestCase):
@@ -39,9 +41,9 @@ class SimpleVCG(unittest.TestCase):
             with open(filename,
                       "w",
                       encoding="UTF-8") as fd:
-                fd.write(vc["script"].generate_vc(smt.SMTLIB_Generator()))
+                fd.write(vc["script"].generate_vc(SMTLIB_Generator()))
                 fd.write("\n")
-                status, values = vc["script"].solve_vc(smt.CVC5_Solver())
+                status, values = vc["script"].solve_vc(CVC5_Solver())
                 fd.write(";; result = %s\n" % status)
                 if values:
                     fd.write(";;\n")
