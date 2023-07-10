@@ -1,4 +1,4 @@
-(set-logic QF_UF)
+(set-logic QF_SAT)
 (set-option :produce-models true)
 
 (declare-const potato Bool)

@@ -23,8 +23,10 @@ features:
 * Parametric sorts:
   [Sequences](https://cvc5.github.io/docs-ci/docs-main/theories/sequences.html)
 * Datatype sorts: Enumerations and Records
+* Uninterpreted functions
 * Quantifiers
 * Boolean expressions: not, and, or, xor, implication
+* If-then-else expressions
 * Comparisons: =, <, >, <=, >=
 * Int -> Real conversion
 * Real -> Int conversion (smtlib rounding (round-to-negative) and

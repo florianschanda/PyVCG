@@ -63,7 +63,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFLIA)
+            (set-logic QF_LIA)
             (set-option :produce-models true)
 
             (declare-const potato Int)
@@ -89,7 +89,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFLIA)
+            (set-logic QF_LIA)
             (set-option :produce-models true)
 
             (define-const potato Int (- 42))
@@ -116,7 +116,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "unsat",
             """
-            (set-logic QF_UF)
+            (set-logic QF_SAT)
             (set-option :produce-models true)
 
             (define-const |pot.ato| Bool false)
@@ -140,7 +140,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UF)
+            (set-logic QF_SAT)
             (set-option :produce-models true)
 
             (declare-const potato Bool)
@@ -163,7 +163,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UF)
+            (set-logic QF_SAT)
             (set-option :produce-models true)
 
             (declare-const potato Bool)
@@ -182,7 +182,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFLRA)
+            (set-logic QF_LRA)
             (set-option :produce-models true)
 
             (declare-const potato Real)
@@ -213,7 +213,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFNIA)
+            (set-logic QF_NIA)
             (set-option :produce-models true)
 
             (declare-const x Int)
@@ -253,7 +253,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFLIA)
+            (set-logic QF_LIA)
             (set-option :produce-models true)
 
             (declare-const x Int)
@@ -300,7 +300,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UF)
+            (set-logic QF_SAT)
             (set-option :produce-models true)
 
             (declare-const a Bool)
@@ -335,7 +335,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFDT)
+            (set-logic QF_DT)
             (set-option :produce-models true)
 
             (declare-datatype Colour ((red) (green) (blue)))
@@ -376,7 +376,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFDT)
+            (set-logic QF_DT)
             (set-option :produce-models true)
 
             (declare-datatype Team ((green) (purple)))
@@ -415,7 +415,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFNIA)
+            (set-logic QF_NIA)
             (set-option :produce-models true)
 
             (define-const a Int 5)
@@ -552,7 +552,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFSLIA)
+            (set-logic QF_SLIA)
             (set-option :produce-models true)
 
             (declare-const a String)
@@ -606,7 +606,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFSLIA)
+            (set-logic QF_SLIA)
             (set-option :produce-models true)
 
             (declare-const a (Seq Int))
@@ -770,7 +770,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFNRA)
+            (set-logic QF_NRA)
             (set-option :produce-models true)
 
             (declare-const a Real)
@@ -804,7 +804,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFLIRA)
+            (set-logic QF_LIRA)
             (set-option :produce-models true)
 
             (define-const a Real (to_real (- 1)))
@@ -846,7 +846,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "unknown",
             """
-            (set-logic UFSLIA)
+            (set-logic SLIA)
             (set-option :produce-models true)
 
             (declare-const arr (Seq Int))
@@ -883,7 +883,7 @@ class SMTBasicTests(unittest.TestCase):
         self.assertResult(
             "sat",
             """
-            (set-logic QF_UFDTSLIA)
+            (set-logic QF_DTSLIA)
             (set-option :produce-models true)
 
             (declare-datatype Kitten ((Kitten__cons
@@ -899,3 +899,136 @@ class SMTBasicTests(unittest.TestCase):
         )
         self.assertValue("a", {"name": "fuzzy",
                                "legs": 4})
+
+    def test_UF_No_Body(self):
+        s_par = smt.Bound_Variable(smt.BUILTIN_INTEGER, "x")
+        s_fun = smt.Function("potato", smt.BUILTIN_INTEGER, s_par)
+        self.script.add_statement(smt.Function_Declaration(s_fun))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Function_Application(
+                                   s_fun,
+                                   smt.Integer_Literal(3)),
+                               smt.Integer_Literal(42))))
+
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     smt.Integer_Literal(3),
+                                     relevant=True))
+        sym_b = smt.Constant(smt.BUILTIN_INTEGER, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Function_Application(s_fun, sym_a),
+                                     relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFLIA)
+            (set-option :produce-models true)
+
+            (declare-fun potato (Int) Int)
+            (assert (= (potato 3) 42))
+            (define-const a Int 3)
+            (define-const b Int (potato a))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertValue("b", 42)
+
+    def test_UF_With_Body(self):
+        s_par = smt.Bound_Variable(smt.BUILTIN_INTEGER, "x")
+        s_fun = smt.Function("potato", smt.BUILTIN_INTEGER, s_par)
+        s_fun.define_body(
+            smt.Binary_Int_Arithmetic_Op("*",
+                                         s_par,
+                                         smt.Integer_Literal(2)))
+        self.script.add_statement(smt.Function_Declaration(s_fun))
+
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        self.script.add_statement(
+            smt.Assertion(smt.Comparison(">=",
+                                         sym_a,
+                                         smt.Integer_Literal(50))))
+        sym_b = smt.Constant(smt.BUILTIN_INTEGER, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     smt.Function_Application(s_fun, sym_a),
+                                     relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFLIA)
+            (set-option :produce-models true)
+
+            (define-fun potato ((x Int)) Int
+              (* x 2))
+            (declare-const a Int)
+            (assert (>= a 50))
+            (define-const b Int (potato a))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        self.assertValue("b", self.values["a"] * 2)
+
+    def test_ITE(self):
+        sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        sym_b = smt.Constant(smt.BUILTIN_STRING, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(
+                    smt.Comparison("=", sym_a, smt.Integer_Literal(0)))))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(
+                    "=",
+                    sym_b,
+                    smt.Conditional(
+                        smt.Comparison(">",
+                                       sym_a,
+                                       smt.Integer_Literal(0)),
+                        smt.String_Literal("positive"),
+                        smt.String_Literal("negative")))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_SLIA)
+            (set-option :produce-models true)
+
+            (declare-const a Int)
+            (declare-const b String)
+            (assert (not (= a 0)))
+            (assert (= b (ite (> a 0) "positive" "negative")))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+        if self.values["a"] > 0:
+            self.assertValue("b", "positive")
+        else:
+            self.assertValue("b", "negative")
+        self.assertNotEqual(self.values["a"], 0)

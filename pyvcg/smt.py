@@ -44,6 +44,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Constant_Declaration)
 
     @abstractmethod
+    def visit_function_declaration(self, node, tr_sort, tr_body):
+        assert isinstance(node, Function_Declaration)
+
+    @abstractmethod
     def visit_assertion(self, node, tr_expression):
         assert isinstance(node, Assertion)
 
@@ -63,6 +67,10 @@ class Visitor(metaclass=ABCMeta):
     def visit_parametric_sort(self, node, tr_parameters):
         assert isinstance(node, Parametric_Sort)
         assert isinstance(tr_parameters, list)
+
+    @abstractmethod
+    def visit_function(self, node):
+        assert isinstance(node, Function)
 
     @abstractmethod
     def visit_enumeration(self, node):
@@ -183,6 +191,15 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Record_Access)
 
     @abstractmethod
+    def visit_function_application(self, node, tr_function, tr_args):
+        assert isinstance(node, Function_Application)
+        assert isinstance(tr_args, list)
+
+    @abstractmethod
+    def visit_conditional(self, node, tr_condition, tr_true, tr_false):
+        assert isinstance(node, Conditional)
+
+    @abstractmethod
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
 
@@ -217,7 +234,8 @@ class Logic_Visitor(Visitor):
     def get_logic_string(self):
         allowed_logics = set(["quant", "int", "real",
                               "strings", "arrays", "sequences",
-                              "nonlinear", "datatypes"])
+                              "nonlinear", "datatypes",
+                              "functions"])
 
         assert not self.logics or self.logics < allowed_logics, \
             "%s is not a permitted logic" % (self.logics - allowed_logics)
@@ -230,7 +248,8 @@ class Logic_Visitor(Visitor):
         if "arrays" in self.logics:  # pragma: no cover
             logic += "A"
 
-        logic += "UF"
+        if "functions" in self.logics or self.functions:
+            logic += "UF"
 
         if "datatypes" in self.logics:
             logic += "DT"
@@ -250,7 +269,12 @@ class Logic_Visitor(Visitor):
                 logic += "R"
             logic += "A"
 
-        return logic
+        if logic == "":  # pragma: no cover
+            return "SAT"
+        elif logic == "QF_":
+            return "QF_SAT"
+        else:
+            return logic
 
     def get_required_functions(self):
         return self.functions
@@ -260,6 +284,10 @@ class Logic_Visitor(Visitor):
 
     def visit_constant_declaration(self, node, tr_symbol, tr_value):
         assert isinstance(node, Constant_Declaration)
+
+    def visit_function_declaration(self, node, tr_sort, tr_body):
+        assert isinstance(node, Function_Declaration)
+        self.logics.add("functions")
 
     def visit_assertion(self, node, tr_expression):
         assert isinstance(node, Assertion)
@@ -294,6 +322,10 @@ class Logic_Visitor(Visitor):
             self.logics.add("sequences")
         else:
             assert False, "unexpected base sort %s" % node.name
+
+    def visit_function(self, node):
+        assert isinstance(node, Function)
+        self.logics.add("functions")
 
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
@@ -414,6 +446,14 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Record_Access)
         self.logics.add("datatypes")
 
+    def visit_function_application(self, node, tr_function, tr_args):
+        assert isinstance(node, Function_Application)
+        assert isinstance(tr_args, list)
+        self.logics.add("functions")
+
+    def visit_conditional(self, node, tr_condition, tr_true, tr_false):
+        assert isinstance(node, Conditional)
+
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, Quantifier)
         self.logics.add("quant")
@@ -518,6 +558,27 @@ class Expression(Node, metaclass=ABCMeta):
         return False
 
 
+class Function(Node):
+    def __init__(self, name, sort, *parameters):
+        assert isinstance(name, str) and "|" not in name
+        assert isinstance(sort, Sort)
+        assert isinstance(parameters, tuple)
+        assert all(isinstance(param, Bound_Variable) for param in parameters)
+        self.name       = name
+        self.sort       = sort
+        self.parameters = parameters
+        self.body       = None
+
+    def define_body(self, expression):
+        assert isinstance(expression, Expression)
+        assert expression.sort is self.sort
+        self.body = expression
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_function(self)
+
+
 ##############################################################################
 # Statements
 ##############################################################################
@@ -542,6 +603,24 @@ class Constant_Declaration(Statement):
         else:
             tr_value = self.value.walk(visitor)
         return visitor.visit_constant_declaration(self, tr_symbol, tr_value)
+
+
+class Function_Declaration(Statement):
+    def __init__(self, function, comment=None):
+        super().__init__(comment)
+        assert isinstance(function, Function)
+        self.function = function
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_sort     = self.function.sort.walk(visitor)
+        if self.function.body is None:
+            tr_body = None
+        else:
+            tr_body = self.function.body.walk(visitor)
+        return visitor.visit_function_declaration(self,
+                                                  tr_sort,
+                                                  tr_body)
 
 
 class Assertion(Statement):
@@ -1072,6 +1151,46 @@ class Record_Access(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_record_access(self,
                                            self.record.walk(visitor))
+
+
+class Function_Application(Expression):
+    def __init__(self, function, *arguments):
+        assert isinstance(function, Function)
+        assert isinstance(arguments, tuple)
+        assert len(arguments) == len(function.parameters)
+        assert all(isinstance(arg, Expression) for arg in arguments)
+        assert all(arg.sort is par.sort
+                   for arg, par in zip(arguments, function.parameters))
+        super().__init__(function.sort)
+        self.function  = function
+        self.arguments = arguments
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_function_application(
+            self,
+            self.function.walk(visitor),
+            [arg.walk(visitor) for arg in self.arguments])
+
+
+class Conditional(Expression):
+    def __init__(self, condition, true_expression, false_expression):
+        assert isinstance(condition, Expression)
+        assert condition.sort is BUILTIN_BOOLEAN
+        assert isinstance(true_expression, Expression)
+        assert isinstance(false_expression, Expression)
+        assert true_expression.sort is false_expression.sort
+        super().__init__(true_expression.sort)
+        self.condition        = condition
+        self.true_expression  = true_expression
+        self.false_expression = false_expression
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_conditional(self,
+                                         self.condition.walk(visitor),
+                                         self.true_expression.walk(visitor),
+                                         self.false_expression.walk(visitor))
 
 
 ##############################################################################

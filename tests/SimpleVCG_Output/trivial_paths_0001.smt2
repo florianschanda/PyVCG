@@ -1,4 +1,4 @@
-(set-logic QF_UFLIA)
+(set-logic QF_LIA)
 (set-option :produce-models true)
 
 (declare-const x Int)

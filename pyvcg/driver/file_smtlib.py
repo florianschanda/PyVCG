@@ -107,6 +107,29 @@ class SMTLIB_Generator(smt.VC_Writer):
                                                            tr_sort,
                                                            tr_value))
 
+    def visit_function_declaration(self, node, tr_sort, tr_body):
+        assert isinstance(node, smt.Function_Declaration)
+
+        self.emit_comment(node.comment)
+
+        tr_name   = self.emit_name(node.function.name)
+
+        if tr_body is None:
+            tr_params = " ".join(par.sort.walk(self)
+                                 for par in node.function.parameters)
+            self.lines.append("(declare-fun %s (%s) %s)" % (tr_name,
+                                                            tr_params,
+                                                            tr_sort))
+
+        else:
+            tr_params = " ".join("(%s %s)" % (self.emit_name(par.name),
+                                              par.sort.walk(self))
+                                 for par in node.function.parameters)
+            self.lines.append("(define-fun %s (%s) %s" % (tr_name,
+                                                          tr_params,
+                                                          tr_sort))
+            self.lines.append("  %s)" % tr_body)
+
     def visit_assertion(self, node, tr_expression):
         assert isinstance(node, smt.Assertion)
         self.emit_comment(node.comment)
@@ -139,6 +162,10 @@ class SMTLIB_Generator(smt.VC_Writer):
         assert isinstance(node, smt.Parametric_Sort)
         assert isinstance(tr_parameters, list)
         return "(%s %s)" % (self.emit_name(node.name), " ".join(tr_parameters))
+
+    def visit_function(self, node):
+        assert isinstance(node, smt.Function)
+        return self.emit_name(node.name)
 
     def visit_enumeration(self, node):
         assert isinstance(node, smt.Enumeration)
@@ -266,6 +293,17 @@ class SMTLIB_Generator(smt.VC_Writer):
     def visit_record_access(self, node, tr_record):
         assert isinstance(node, smt.Record_Access)
         return "(%s %s)" % (node.component, tr_record)
+
+    def visit_function_application(self, node, tr_function, tr_args):
+        assert isinstance(node, smt.Function_Application)
+        assert isinstance(tr_args, list)
+        return "(%s %s)" % (tr_function, " ".join(tr_args))
+
+    def visit_conditional(self, node, tr_condition, tr_true, tr_false):
+        assert isinstance(node, smt.Conditional)
+        return "(ite %s %s %s)" % (tr_condition,
+                                   tr_true,
+                                   tr_false)
 
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, smt.Quantifier)

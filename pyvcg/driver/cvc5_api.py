@@ -40,6 +40,7 @@ class CVC5_Solver(smt.VC_Solver):
         self.function_mapping = {}
         self.sort_mapping     = {}
         self.record_mapping   = {}
+        self.user_functions   = {}
 
         self.relevant_values  = []
 
@@ -200,6 +201,26 @@ class CVC5_Solver(smt.VC_Solver):
         if node.is_relevant:
             self.relevant_values.append(node.symbol)
 
+    def visit_function_declaration(self, node, tr_sort, tr_body):
+        assert isinstance(node, smt.Function_Declaration)
+
+        if tr_body is None:
+            tr_params = [par.sort.walk(self)
+                         for par in node.function.parameters]
+            fun = self.solver.declareFun(node.function.name,
+                                         tr_params,
+                                         tr_sort)
+
+        else:
+            tr_params = [par.walk(self)
+                         for par in node.function.parameters]
+            fun = self.solver.defineFun(node.function.name,
+                                        tr_params,
+                                        tr_sort,
+                                        tr_body)
+
+        self.user_functions[node.function] = fun
+
     def visit_assertion(self, node, tr_expression):
         assert isinstance(node, smt.Assertion)
 
@@ -258,6 +279,10 @@ class CVC5_Solver(smt.VC_Solver):
                 assert False
 
         return self.sort_mapping[node]
+
+    def visit_function(self, node):
+        assert isinstance(node, smt.Function)
+        return self.user_functions[node]
 
     def visit_enumeration(self, node):
         assert isinstance(node, smt.Enumeration)
@@ -446,6 +471,21 @@ class CVC5_Solver(smt.VC_Solver):
         return self.solver.mkTerm(cvc5.Kind.APPLY_SELECTOR,
                                   s_selector.getTerm(),
                                   tr_record)
+
+    def visit_function_application(self, node, tr_function, tr_args):
+        assert isinstance(node, smt.Function_Application)
+        assert isinstance(tr_args, list)
+
+        return self.solver.mkTerm(cvc5.Kind.APPLY_UF,
+                                  tr_function,
+                                  *tr_args)
+
+    def visit_conditional(self, node, tr_condition, tr_true, tr_false):
+        assert isinstance(node, smt.Conditional)
+        return self.solver.mkTerm(cvc5.Kind.ITE,
+                                  tr_condition,
+                                  tr_true,
+                                  tr_false)
 
     def visit_quantifier(self, node, tr_variables, tr_body):
         assert isinstance(node, smt.Quantifier)
