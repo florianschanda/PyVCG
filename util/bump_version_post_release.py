@@ -33,7 +33,7 @@ release += 1
 
 # Bump version and update version.py
 
-VERSION_FILE = os.path.join("pyvcg", "pyvcg.py")
+VERSION_FILE = os.path.join("pyvcg", "version.py")
 
 tmp = ""
 with open(VERSION_FILE, "r") as fd:

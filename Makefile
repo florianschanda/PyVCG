@@ -23,3 +23,13 @@ lint: style
 package:
 	@git clean -xdf
 	@python3 setup.py sdist bdist_wheel
+
+release:
+	make precommit
+	python3 -m util.release
+	git push
+	python3 -m util.github_release
+	make package
+	python3 -m twine upload --repository pypi dist/*
+	python3 -m util.bump_version_post_release
+	git push
