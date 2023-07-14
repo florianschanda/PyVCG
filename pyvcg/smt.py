@@ -330,7 +330,6 @@ class Logic_Visitor(Visitor):
             param.walk(self)
         self.logics.add("functions")
 
-
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)
         self.logics.add("datatypes")
