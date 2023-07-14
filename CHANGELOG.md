@@ -7,6 +7,10 @@
 
 ## Changelog
 
+
+### 1.0.2-dev
+
+
 ### 1.0.1
 
 * Fix bug where an uninterpreted function declaration did not
