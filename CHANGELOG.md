@@ -12,6 +12,9 @@
 * Fix bug where an uninterpreted function declaration did not
   contribute correctly to the logic selection.
 
+* Adjust required Python version to 3.8 to 3.10 (as that is what CVC5
+  currently supports).
+
 ### 1.0.0
 
 * First release
