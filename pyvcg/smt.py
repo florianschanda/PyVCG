@@ -287,6 +287,7 @@ class Logic_Visitor(Visitor):
 
     def visit_function_declaration(self, node, tr_sort, tr_body):
         assert isinstance(node, Function_Declaration)
+        node.function.walk(self)
         self.logics.add("functions")
 
     def visit_assertion(self, node, tr_expression):
@@ -325,7 +326,10 @@ class Logic_Visitor(Visitor):
 
     def visit_function(self, node):
         assert isinstance(node, Function)
+        for param in node.parameters:
+            param.walk(self)
         self.logics.add("functions")
+
 
     def visit_enumeration(self, node):
         assert isinstance(node, Enumeration)

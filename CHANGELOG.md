@@ -7,9 +7,10 @@
 
 ## Changelog
 
-
 ### 1.0.1-dev
 
+* Fix bug where an uninterpreted function declaration did not
+  contribute correctly to the logic selection.
 
 ### 1.0.0
 

@@ -984,6 +984,23 @@ class SMTBasicTests(unittest.TestCase):
         )
         self.assertValue("b", self.values["a"] * 2)
 
+    def test_UF_Unused(self):
+        s_par = smt.Bound_Variable(smt.BUILTIN_STRING, "x")
+        s_fun = smt.Function("potato", smt.BUILTIN_BOOLEAN, s_par)
+        self.script.add_statement(smt.Function_Declaration(s_fun))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_UFS)
+            (set-option :produce-models true)
+
+            (declare-fun potato (String) Bool)
+            (check-sat)
+            (exit)
+            """
+        )
+
     def test_ITE(self):
         sym_a = smt.Constant(smt.BUILTIN_INTEGER, "a")
         self.script.add_statement(
