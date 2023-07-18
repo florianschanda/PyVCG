@@ -35,14 +35,27 @@ class SMTLIB_Generator(smt.VC_Writer):
     def emit_comment(self, comment):
         assert isinstance(comment, str) or comment is None
         if comment is not None:
-            self.lines.append(";; %s" % comment)
+            self.lines.append(";; %s" % comment.replace("\n", " "))
 
-    def emit_name(self, name):
+    @staticmethod
+    def escape_name(name):
         assert isinstance(name, str) and "|" not in name
         if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
             return name
         else:
             return "|%s|" % name
+
+    @staticmethod
+    def escape_string_literal(string):
+        escaped = ""
+        for c in string:
+            if c == '"':
+                escaped += '""'
+            elif c.isprintable():
+                escaped += c
+            else:
+                escaped += r"\u{%x}" % ord(c)
+        return escaped
 
     def visit_script(self, node, logic, functions):
         assert isinstance(node, smt.Script)
@@ -112,7 +125,7 @@ class SMTLIB_Generator(smt.VC_Writer):
 
         self.emit_comment(node.comment)
 
-        tr_name   = self.emit_name(node.function.name)
+        tr_name   = self.escape_name(node.function.name)
 
         if tr_body is None:
             tr_params = " ".join(par.sort.walk(self)
@@ -122,7 +135,7 @@ class SMTLIB_Generator(smt.VC_Writer):
                                                             tr_sort))
 
         else:
-            tr_params = " ".join("(%s %s)" % (self.emit_name(par.name),
+            tr_params = " ".join("(%s %s)" % (self.escape_name(par.name),
                                               par.sort.walk(self))
                                  for par in node.function.parameters)
             self.lines.append("(define-fun %s (%s) %s" % (tr_name,
@@ -139,7 +152,7 @@ class SMTLIB_Generator(smt.VC_Writer):
         assert isinstance(node, smt.Enumeration_Declaration)
         self.emit_comment(node.comment)
         self.lines.append("(declare-datatype %s (%s))" %
-                          (self.emit_name(node.sort.name),
+                          (self.escape_name(node.sort.name),
                            " ".join("(%s)" % literal
                                     for literal in node.sort.literals)))
 
@@ -147,33 +160,34 @@ class SMTLIB_Generator(smt.VC_Writer):
         assert isinstance(node, smt.Record_Declaration)
         self.emit_comment(node.comment)
         self.lines.append("(declare-datatype %s ((%s" %
-                          (self.emit_name(node.sort.name),
-                           self.emit_name(node.sort.name + "__cons")))
+                          (self.escape_name(node.sort.name),
+                           self.escape_name(node.sort.name + "__cons")))
         for name, sort in node.sort.components.items():
-            self.lines.append("  (%s %s)" % (self.emit_name(name),
+            self.lines.append("  (%s %s)" % (self.escape_name(name),
                                              sort.walk(self)))
         self.lines[-1] += ")))"
 
     def visit_sort(self, node):
         assert isinstance(node, smt.Sort)
-        return self.emit_name(node.name)
+        return self.escape_name(node.name)
 
     def visit_parametric_sort(self, node, tr_parameters):
         assert isinstance(node, smt.Parametric_Sort)
         assert isinstance(tr_parameters, list)
-        return "(%s %s)" % (self.emit_name(node.name), " ".join(tr_parameters))
+        return "(%s %s)" % (self.escape_name(node.name),
+                            " ".join(tr_parameters))
 
     def visit_function(self, node):
         assert isinstance(node, smt.Function)
-        return self.emit_name(node.name)
+        return self.escape_name(node.name)
 
     def visit_enumeration(self, node):
         assert isinstance(node, smt.Enumeration)
-        return self.emit_name(node.name)
+        return self.escape_name(node.name)
 
     def visit_record(self, node):
         assert isinstance(node, smt.Record)
-        return self.emit_name(node.name)
+        return self.escape_name(node.name)
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, smt.Boolean_Literal)
@@ -198,15 +212,15 @@ class SMTLIB_Generator(smt.VC_Writer):
 
     def visit_string_literal(self, node, tr_sort):
         assert isinstance(node, smt.String_Literal)
-        return '"%s"' % node.value
+        return '"%s"' % self.escape_string_literal(node.value)
 
     def visit_constant(self, node, tr_sort):
         assert isinstance(node, smt.Constant)
-        return self.emit_name(node.name)
+        return self.escape_name(node.name)
 
     def visit_bound_variable(self, node, tr_sort):
         assert isinstance(node, smt.Bound_Variable)
-        return self.emit_name(node.name)
+        return self.escape_name(node.name)
 
     def visit_boolean_negation(self, node, tr_sort, tr_expression):
         assert isinstance(node, smt.Boolean_Negation)
@@ -309,7 +323,7 @@ class SMTLIB_Generator(smt.VC_Writer):
         assert isinstance(node, smt.Quantifier)
         return "(%s (%s)\n  %s)" % (
             node.kind,
-            " ".join("(%s %s)" % (self.emit_name(var.name),
+            " ".join("(%s %s)" % (self.escape_name(var.name),
                                   var.sort.walk(self))
                      for var in node.variables),
             tr_body)

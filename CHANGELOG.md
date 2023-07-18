@@ -7,9 +7,12 @@
 
 ## Changelog
 
-
 ### 1.0.2-dev
 
+* Fix bug in printing smtlib string literals. They are now correctly
+  escaped for both quotations and non-printable characters.
+
+* Fix bug when printing smtlib comments with newlines.
 
 ### 1.0.1
 
