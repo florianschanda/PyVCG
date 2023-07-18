@@ -7,6 +7,10 @@
 
 ## Changelog
 
+
+### 1.0.3-dev
+
+
 ### 1.0.2
 
 * Fix bug in printing smtlib string literals. They are now correctly
