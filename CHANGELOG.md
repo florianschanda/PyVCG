@@ -10,6 +10,7 @@
 
 ### 1.0.3-dev
 
+* Pin to CVC5 1.0.5, as 1.0.7 is completely broken
 
 ### 1.0.2
 
