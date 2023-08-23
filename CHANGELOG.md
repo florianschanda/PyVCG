@@ -8,7 +8,7 @@
 ## Changelog
 
 
-### 1.0.3-dev
+### 1.0.3
 
 * Pin to CVC5 1.0.5, as 1.0.7 is completely broken
 
