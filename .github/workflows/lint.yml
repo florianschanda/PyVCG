@@ -1,4 +1,4 @@
-name: PyVCG CI
+name: PyVCG CI (Lint)
 
 on:
   push:
@@ -18,9 +18,9 @@ jobs:
       - uses: actions/checkout@v3
       - uses: supplypike/setup-bin@v3
         with:
-          uri: 'https://github.com/cvc5/cvc5/releases/download/cvc5-1.0.5/cvc5-Linux'
+          uri: 'https://github.com/cvc5/cvc5/releases/download/cvc5-1.0.8/cvc5-Linux'
           name: 'cvc5'
-          version: '1.0.5'
+          version: '1.0.8'
       - name: Set up Python 3.9
         uses: actions/setup-python@v3
         with:
@@ -28,14 +28,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install cvc5 coverage pylint pycodestyle
+          pip install -r requirements.txt
       - name: Style check
         run: |
           python -m pycodestyle pyvcg tests
       - name: Lint
         run: |
           python -m pylint --rcfile=pylint3.cfg pyvcg --reports=no --score=no --extension-pkg-allow-list=cvc5
-      - name: Test
-        run: |
-          coverage run --branch --rcfile=coverage.cfg -m unittest discover -s tests -v
-          coverage report --rcfile=coverage.cfg --fail-under=100
