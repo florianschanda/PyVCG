@@ -10,7 +10,8 @@
 
 ### 1.0.4-dev
 
-* Move to CVC 1.0.8
+* Move to CVC 1.0.8. This means we can now support Python 3.11 as
+  well.
 
 ### 1.0.3
 
