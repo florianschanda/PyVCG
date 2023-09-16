@@ -10,7 +10,8 @@
 
 ### 1.0.5-dev
 
-
+* Fix python_requires, the expression acidentally excluded Python
+  3.11. We should now correctly support it.
 
 ### 1.0.4
 
