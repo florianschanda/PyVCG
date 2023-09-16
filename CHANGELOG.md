@@ -8,7 +8,7 @@
 ## Changelog
 
 
-### 1.0.5-dev
+### 1.0.5
 
 * Fix python_requires, the expression acidentally excluded Python
   3.11. We should now correctly support it.
