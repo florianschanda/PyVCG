@@ -8,6 +8,10 @@
 ## Changelog
 
 
+### 1.0.6-dev
+
+
+
 ### 1.0.5
 
 * Fix python_requires, the expression acidentally excluded Python
