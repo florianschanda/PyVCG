@@ -10,7 +10,7 @@
 
 ### 1.0.6-dev
 
-
+* Add new driver for CVC5 (via SMTLIB files instead of the API).
 
 ### 1.0.5
 

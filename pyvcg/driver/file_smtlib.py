@@ -153,7 +153,7 @@ class SMTLIB_Generator(smt.VC_Writer):
         self.emit_comment(node.comment)
         self.lines.append("(declare-datatype %s (%s))" %
                           (self.escape_name(node.sort.name),
-                           " ".join("(%s)" % literal
+                           " ".join("(%s)" % self.escape_name(literal)
                                     for literal in node.sort.literals)))
 
     def visit_record_declaration(self, node):
@@ -208,7 +208,7 @@ class SMTLIB_Generator(smt.VC_Writer):
 
     def visit_enumeration_literal(self, node, tr_sort):
         assert isinstance(node, smt.Enumeration_Literal)
-        return "(as %s %s)" % (node.value, tr_sort)
+        return "(as %s %s)" % (self.escape_name(node.value), tr_sort)
 
     def visit_string_literal(self, node, tr_sort):
         assert isinstance(node, smt.String_Literal)

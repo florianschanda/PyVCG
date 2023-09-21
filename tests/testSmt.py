@@ -7,20 +7,26 @@ from fractions import Fraction
 from pyvcg import smt
 from pyvcg.driver.file_smtlib import SMTLIB_Generator
 from pyvcg.driver.cvc5_api import CVC5_Solver
+from pyvcg.driver.cvc5_smtlib import CVC5_File_Solver
 
 
 class SMTBasicTests(unittest.TestCase):
     def setUp(self):
-        self.script = smt.Script()
-        self.smtlib = None
-        self.result = None
-        self.values = None
+        self.script      = smt.Script()
+        self.smtlib      = None
+        self.result_api  = None
+        self.result_file = None
+        self.values_api  = None
+        self.values_file = None
 
     def assertResult(self, status, string):
         assert status in ("sat", "unsat", "unknown")
 
         self.smtlib = self.script.generate_vc(SMTLIB_Generator())
-        self.result, self.values = self.script.solve_vc(CVC5_Solver())
+        self.result_api, self.values_api = \
+            self.script.solve_vc(CVC5_Solver())
+        self.result_file, self.values_file = \
+            self.script.solve_vc(CVC5_File_Solver())
 
         # Verify SMTLIB output
         string = "\n".join(s.strip() for s in string.strip().splitlines())
@@ -30,7 +36,8 @@ class SMTBasicTests(unittest.TestCase):
                  for s in self.smtlib.strip().splitlines()))
 
         # Verify CVC5 result
-        self.assertEqual(self.result, status)
+        self.assertEqual(self.result_file, status)
+        self.assertEqual(self.result_api, status)
 
         # Verify CVC5 result from SMTLIB input
         result = subprocess.run(["cvc5"],
@@ -41,8 +48,10 @@ class SMTBasicTests(unittest.TestCase):
         self.assertEqual(result.stdout.splitlines()[0], status)
 
     def assertValue(self, name, value):
-        self.assertIn(name, self.values)
-        self.assertEqual(self.values[name], value)
+        self.assertIn(name, self.values_file)
+        self.assertIn(name, self.values_api)
+        self.assertEqual(self.values_file[name], value)
+        self.assertEqual(self.values_api[name], value)
 
     def test_Simple_Const(self):
         sym = smt.Constant(smt.BUILTIN_BOOLEAN, "pot.ato")
@@ -127,7 +136,8 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertEqual(self.values, {})
+        self.assertEqual(self.values_api, {})
+        self.assertEqual(self.values_file, {})
 
     def test_Simple_Sat_Bool_Result(self):
         sym = smt.Constant(smt.BUILTIN_BOOLEAN, "potato")
@@ -172,7 +182,8 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertEqual(self.values, {})
+        self.assertEqual(self.values_api, {})
+        self.assertEqual(self.values_file, {})
 
     def test_Simple_Sat_Real_Free_Result(self):
         sym = smt.Constant(smt.BUILTIN_REAL, "potato")
@@ -191,7 +202,8 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertIsInstance(self.values.get("potato", None), Fraction)
+        self.assertIsInstance(self.values_api.get("potato", None), Fraction)
+        self.assertIsInstance(self.values_file.get("potato", None), Fraction)
 
     def test_Simple_Int_Nonlinear_Arithmetic(self):
         sym_x = smt.Constant(smt.BUILTIN_INTEGER, "x")
@@ -228,7 +240,10 @@ class SMTBasicTests(unittest.TestCase):
             """
         )
 
-        self.assertEqual(self.values.get("x", 0) * self.values.get("y", 0), 33)
+        self.assertEqual(self.values_api.get("x", 0) *
+                         self.values_api.get("y", 0), 33)
+        self.assertEqual(self.values_file.get("x", 0) *
+                         self.values_file.get("y", 0), 33)
 
     def test_Simple_Int_Linear_Arithmetic(self):
         sym_x = smt.Constant(smt.BUILTIN_INTEGER, "x")
@@ -268,7 +283,10 @@ class SMTBasicTests(unittest.TestCase):
             """
         )
 
-        self.assertEqual(self.values.get("x", 0), self.values.get("y", 0) * 5)
+        self.assertEqual(self.values_api.get("x", 0),
+                         self.values_api.get("y", 0) * 5)
+        self.assertEqual(self.values_file.get("x", 0),
+                         self.values_file.get("y", 0) * 5)
 
     def test_Logical_Connectives(self):
         sym_a = smt.Constant(smt.BUILTIN_BOOLEAN, "a")
@@ -345,12 +363,14 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertIn(self.values["a"], enum.literals)
+        self.assertIn(self.values_api["a"], enum.literals)
+        self.assertIn(self.values_file["a"], enum.literals)
 
     def test_Enum_Exclusion(self):
         enum = smt.Enumeration("Team")
         enum.add_literal("green")
         enum.add_literal("purple")
+        enum.add_literal("eldritch horror")
 
         self.script.add_statement(
             smt.Enumeration_Declaration(enum))
@@ -371,7 +391,8 @@ class SMTBasicTests(unittest.TestCase):
             smt.Assertion(
                 smt.Comparison("=",
                                sym_a,
-                               smt.Enumeration_Literal(enum, "green"))))
+                               smt.Enumeration_Literal(enum,
+                                                       "eldritch horror"))))
 
         self.assertResult(
             "sat",
@@ -379,18 +400,18 @@ class SMTBasicTests(unittest.TestCase):
             (set-logic QF_DT)
             (set-option :produce-models true)
 
-            (declare-datatype Team ((green) (purple)))
+            (declare-datatype Team ((green) (purple) (|eldritch horror|)))
             (declare-const a Team)
             (declare-const b Team)
             (assert (not (= a b)))
-            (assert (= a (as green Team)))
+            (assert (= a (as |eldritch horror| Team)))
             (check-sat)
             (get-value (a))
             (get-value (b))
             (exit)
             """
         )
-        self.assertValue("a", "green")
+        self.assertValue("a", "eldritch horror")
         self.assertValue("b", "purple")
 
     def test_Basic_Division(self):
@@ -567,13 +588,22 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertEqual(len(self.values["a"]), 10)
-        self.assertTrue(self.values["a"].startswith("foo"),
-                        self.values["a"])
-        self.assertTrue(self.values["a"].endswith("bar"),
-                        self.values["a"])
-        self.assertNotIn("A", self.values["a"])
-        self.assertValue("b", self.values["a"] + self.values["a"])
+        self.assertEqual(len(self.values_api["a"]), 10)
+        self.assertEqual(len(self.values_file["a"]), 10)
+        self.assertTrue(self.values_api["a"].startswith("foo"),
+                        self.values_api["a"])
+        self.assertTrue(self.values_file["a"].startswith("foo"),
+                        self.values_file["a"])
+        self.assertTrue(self.values_api["a"].endswith("bar"),
+                        self.values_api["a"])
+        self.assertTrue(self.values_file["a"].endswith("bar"),
+                        self.values_file["a"])
+        self.assertNotIn("A", self.values_api["a"])
+        self.assertNotIn("A", self.values_file["a"])
+        self.assertEqual(self.values_api["b"],
+                         self.values_api["a"] + self.values_api["a"])
+        self.assertEqual(self.values_file["b"],
+                         self.values_file["a"] + self.values_file["a"])
 
     def test_Sequences(self):
         sort = smt.Sequence_Sort(smt.BUILTIN_INTEGER)
@@ -620,11 +650,16 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertGreater(len(self.values["a"]), 10)
-        self.assertIn(42, self.values["a"])
-        self.assertEqual(self.values["a"][3], 123)
-        self.assertSequenceEqual(self.values["a"] + self.values["a"],
-                                 self.values["b"])
+        self.assertGreater(len(self.values_api["a"]), 10)
+        self.assertGreater(len(self.values_file["a"]), 10)
+        self.assertIn(42, self.values_api["a"])
+        self.assertIn(42, self.values_file["a"])
+        self.assertEqual(self.values_api["a"][3], 123)
+        self.assertEqual(self.values_file["a"][3], 123)
+        self.assertSequenceEqual(self.values_api["a"] + self.values_api["a"],
+                                 self.values_api["b"])
+        self.assertSequenceEqual(self.values_file["a"] + self.values_file["a"],
+                                 self.values_file["b"])
 
     def test_Real_Operations(self):
         sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
@@ -668,8 +703,18 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertGreater(abs(self.values["a"] + self.values["b"]), 10)
-        self.assertEqual(self.values["a"] * self.values["b"], Fraction(7, 3))
+        self.assertGreater(abs(self.values_api["a"] +
+                               self.values_api["b"]),
+                           10)
+        self.assertGreater(abs(self.values_file["a"] +
+                               self.values_file["b"]),
+                           10)
+        self.assertEqual(self.values_api["a"] *
+                         self.values_api["b"],
+                         Fraction(7, 3))
+        self.assertEqual(self.values_file["a"] *
+                         self.values_file["b"],
+                         Fraction(7, 3))
 
     def test_Real_Conversions_To_Real(self):
         sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
@@ -783,8 +828,16 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertGreater(abs(self.values["a"] + self.values["b"]), 10)
-        self.assertEqual(self.values["a"] * self.values["b"], Fraction(7, 3))
+        self.assertGreater(abs(self.values_api["a"] +
+                               self.values_api["b"]),
+                           10)
+        self.assertGreater(abs(self.values_file["a"] +
+                               self.values_file["b"]),
+                           10)
+        self.assertEqual(self.values_api["a"] * self.values_api["b"],
+                         Fraction(7, 3))
+        self.assertEqual(self.values_file["a"] * self.values_file["b"],
+                         Fraction(7, 3))
 
     def test_Real_Conversions_To_Real(self):
         sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
@@ -982,7 +1035,8 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        self.assertValue("b", self.values["a"] * 2)
+        self.assertValue("b", self.values_api["a"] * 2)
+        self.assertValue("b", self.values_file["a"] * 2)
 
     def test_UF_Unused(self):
         s_par = smt.Bound_Variable(smt.BUILTIN_STRING, "x")
@@ -1044,8 +1098,17 @@ class SMTBasicTests(unittest.TestCase):
             (exit)
             """
         )
-        if self.values["a"] > 0:
-            self.assertValue("b", "positive")
+        if self.values_api["a"] > 0:
+            self.assertIn("b", self.values_api)
+            self.assertEqual(self.values_api["b"], "positive")
         else:
-            self.assertValue("b", "negative")
-        self.assertNotEqual(self.values["a"], 0)
+            self.assertIn("b", self.values_api)
+            self.assertEqual(self.values_api["b"], "negative")
+        if self.values_file["a"] > 0:
+            self.assertIn("b", self.values_file)
+            self.assertEqual(self.values_file["b"], "positive")
+        else:
+            self.assertIn("b", self.values_file)
+            self.assertEqual(self.values_file["b"], "negative")
+        self.assertNotEqual(self.values_file["a"], 0)
+        self.assertNotEqual(self.values_api["a"], 0)

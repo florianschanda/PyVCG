@@ -49,7 +49,10 @@ class CVC5_Solver(smt.VC_Solver):
         assert isinstance(term, cvc5.Term)
 
         if isinstance(sort, smt.Enumeration):
-            return str(term)
+            rv = str(term)
+            if rv.startswith("|"):
+                rv = rv[1:-1]
+            return rv
         elif isinstance(sort, smt.Record):
             assert term.getKind() == cvc5.Kind.APPLY_CONSTRUCTOR
             rv = {}
