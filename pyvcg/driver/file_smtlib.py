@@ -29,8 +29,9 @@ from pyvcg import smt
 
 class SMTLIB_Generator(smt.VC_Writer):
     def __init__(self):
-        self.lines  = []
-        self.values = []
+        self.lines   = []
+        self.values  = []
+        self.options = {}
 
     def emit_comment(self, comment):
         assert isinstance(comment, str) or comment is None
@@ -57,6 +58,11 @@ class SMTLIB_Generator(smt.VC_Writer):
                 escaped += r"\u{%x}" % ord(c)
         return escaped
 
+    def set_solver_option(self, name, value):
+        assert isinstance(name, str)
+        assert isinstance(value, (bool, int, str))
+        self.options[name] = value
+
     def visit_script(self, node, logic, functions):
         assert isinstance(node, smt.Script)
         assert isinstance(logic, str)
@@ -68,6 +74,13 @@ class SMTLIB_Generator(smt.VC_Writer):
             "(set-logic %s)" % logic,
             "(set-option :produce-models true)",
         ]
+        for option, value in self.options.items():
+            if isinstance(value, bool):
+                value = str(value).lower()
+            else:
+                value = str(value)
+            script.append("(set-option :%s %s)" % (option, value))
+
         for function in functions:
             if function == "floor_div":
                 script.append("(define-fun floor_div"

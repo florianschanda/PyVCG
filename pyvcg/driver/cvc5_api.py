@@ -77,6 +77,14 @@ class CVC5_Solver(smt.VC_Solver):
         else:
             assert False, (term.getKind(), term.__class__.__name__)
 
+    def set_solver_option(self, name, value):
+        assert isinstance(name, str)
+        assert isinstance(value, (bool, int, str))
+        if isinstance(value, bool):
+            self.solver.setOption(name, str(value).lower())
+        else:
+            self.solver.setOption(name, str(value))
+
     def solve(self):
         result = self.solver.checkSat()
         if result.isSat():

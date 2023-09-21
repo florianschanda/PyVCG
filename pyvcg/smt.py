@@ -204,11 +204,18 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Quantifier)
 
 
-class VC_Writer(Visitor, metaclass=ABCMeta):
+class Driver(Visitor, metaclass=ABCMeta):
+    @abstractmethod
+    def set_solver_option(self, name, value):
+        assert isinstance(name, str)
+        assert isinstance(value, (bool, int, str))
+
+
+class VC_Writer(Driver, metaclass=ABCMeta):
     pass
 
 
-class VC_Solver(Visitor, metaclass=ABCMeta):
+class VC_Solver(Driver, metaclass=ABCMeta):
     @abstractmethod
     def solve(self):
         pass

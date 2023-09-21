@@ -19,14 +19,21 @@ class SMTBasicTests(unittest.TestCase):
         self.values_api  = None
         self.values_file = None
 
-    def assertResult(self, status, string):
+    def assertResult(self, status, string, options=None):
         assert status in ("sat", "unsat", "unknown")
 
-        self.smtlib = self.script.generate_vc(SMTLIB_Generator())
-        self.result_api, self.values_api = \
-            self.script.solve_vc(CVC5_Solver())
-        self.result_file, self.values_file = \
-            self.script.solve_vc(CVC5_File_Solver())
+        writer_file = SMTLIB_Generator()
+        solver_api = CVC5_Solver()
+        solver_file = CVC5_File_Solver()
+        if options is not None:
+            for name, value in options.items():
+                writer_file.set_solver_option(name, value)
+                solver_api.set_solver_option(name, value)
+                solver_file.set_solver_option(name, value)
+
+        self.smtlib = self.script.generate_vc(writer_file)
+        self.result_api, self.values_api = self.script.solve_vc(solver_api)
+        self.result_file, self.values_file = self.script.solve_vc(solver_file)
 
         # Verify SMTLIB output
         string = "\n".join(s.strip() for s in string.strip().splitlines())
@@ -74,12 +81,16 @@ class SMTBasicTests(unittest.TestCase):
             """
             (set-logic QF_LIA)
             (set-option :produce-models true)
+            (set-option :sat-random-seed 42)
+            (set-option :strings-fmf true)
 
             (declare-const potato Int)
             (check-sat)
             (get-value (potato))
             (exit)
-            """
+            """,
+            {"sat-random-seed" : 42,
+             "strings-fmf"     : True}
         )
 
     def test_Simple_Sat_Result_2(self):
@@ -607,6 +618,7 @@ class SMTBasicTests(unittest.TestCase):
 
     def test_Sequences(self):
         sort = smt.Sequence_Sort(smt.BUILTIN_INTEGER)
+
         sym_a = smt.Constant(sort, "a")
         self.script.add_statement(
             smt.Constant_Declaration(sym_a,
@@ -618,11 +630,21 @@ class SMTBasicTests(unittest.TestCase):
                                      smt.Sequence_Concatenation(sym_a, sym_a),
                                      relevant=True))
 
+        sym_c = smt.Constant(sort, "c")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_c,
+                                     relevant=True))
+
         self.script.add_statement(
             smt.Assertion(
                 smt.Comparison(">",
                                smt.Sequence_Length(sym_a),
                                smt.Integer_Literal(10))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("<",
+                               smt.Sequence_Length(sym_c),
+                               smt.Integer_Literal(1))))
         self.script.add_statement(
             smt.Assertion(
                 smt.Sequence_Contains(sym_a, smt.Integer_Literal(42))))
@@ -641,12 +663,15 @@ class SMTBasicTests(unittest.TestCase):
 
             (declare-const a (Seq Int))
             (define-const b (Seq Int) (seq.++ a a))
+            (declare-const c (Seq Int))
             (assert (> (seq.len a) 10))
+            (assert (< (seq.len c) 1))
             (assert (seq.contains a (seq.unit 42)))
             (assert (= (seq.nth a 3) 123))
             (check-sat)
             (get-value (a))
             (get-value (b))
+            (get-value (c))
             (exit)
             """
         )
@@ -660,6 +685,7 @@ class SMTBasicTests(unittest.TestCase):
                                  self.values_api["b"])
         self.assertSequenceEqual(self.values_file["a"] + self.values_file["a"],
                                  self.values_file["b"])
+        self.assertValue("c", [])
 
     def test_Real_Operations(self):
         sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
@@ -1112,3 +1138,32 @@ class SMTBasicTests(unittest.TestCase):
             self.assertEqual(self.values_file["b"], "negative")
         self.assertNotEqual(self.values_file["a"], 0)
         self.assertNotEqual(self.values_api["a"], 0)
+
+    def test_algebraic_number(self):
+        sym_a = smt.Constant(smt.BUILTIN_REAL, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(
+                    "=",
+                    smt.Binary_Real_Arithmetic_Op("*", sym_a, sym_a),
+                    smt.Real_Literal(2))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_NRA)
+            (set-option :produce-models true)
+
+            (declare-const a Real)
+            (assert (= (* a a) (/ 2 1)))
+            (check-sat)
+            (get-value (a))
+            (exit)
+            """
+        )
+        # Algebraic number not supported yet
+        self.assertValue("a", None)

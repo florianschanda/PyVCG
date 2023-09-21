@@ -103,7 +103,7 @@ class CVC5_Result_Lexer:
         elif self.cc == ")":
             kind = "KET"
 
-        elif self.is_alpha(self.cc):
+        elif self.is_alpha(self.cc) or self.cc == "_":
             kind = "IDENTIFIER"
             while self.nc and (self.is_alnum(self.nc) or
                                self.nc in ("_", ".", "+")):
@@ -126,6 +126,12 @@ class CVC5_Result_Lexer:
 
         elif self.cc in ("-", "/"):
             kind = "OP"
+
+        elif self.cc == "<":
+            kind = "TRIANGLE_EXPR"
+            while self.nc and self.nc != ">":
+                self.advance()
+            self.advance()
 
         elif self.cc == '"':
             kind = "STRING"
@@ -178,13 +184,16 @@ class CVC5_Result_Parser:
     def peek(self, kind):
         return self.nt is not None and self.nt.kind == kind
 
-    def match(self, kind):
+    def match(self, kind, value=None):
         if self.nt is None:  # pragma: no cover
-            raise Parse_Error("expected %s, encountered EOS instead" %
-                              kind)
+            self.error("expected %s, encountered EOS instead" %
+                       kind)
         if self.nt.kind != kind:  # pragma: no cover
-            raise Parse_Error("expected %s, encountered %s instead" %
-                              (kind, self.nt.kind))
+            self.error("expected %s, encountered %s instead" %
+                       (kind, self.nt.kind))
+        if value is not None and self.nt.value != value:  # pragma: no cover
+            self.error("expected %s, encountered %s instead" %
+                       (value, self.nt.value))
         self.advance()
 
     def match_eos(self):
@@ -256,13 +265,29 @@ class CVC5_Result_Parser:
     def parse_real(self):
         if self.peek("BRA"):
             self.match("BRA")
-            self.match("OP")
-            if self.ct.value == "-":
-                rv = - self.parse_real()
-            elif self.ct.value == "/":
-                rv = self.parse_real() / self.parse_real()
-            else:  # pragma: no cover
-                self.error("unexpected real op %s" % self.ct.value)
+            if self.peek("OP"):
+                self.match("OP")
+                if self.ct.value == "-":
+                    rv = self.parse_real()
+                    if rv is not None:  # pragma: no cover
+                        # Excessive caution
+                        rv = -rv
+                elif self.ct.value == "/":
+                    num = self.parse_real()
+                    den = self.parse_real()
+                    if num is None or den is None:  # pragma: no cover
+                        # Excessive caution
+                        rv = None
+                    else:
+                        rv = num / den
+                else:  # pragma: no cover
+                    self.error("unexpected real op %s" % self.ct.value)
+            else:
+                self.match("IDENTIFIER", "_")
+                self.match("IDENTIFIER", "real_algebraic_number")
+                self.match("TRIANGLE_EXPR")
+                rv = None
+
             self.match("KET")
 
         else:
@@ -294,6 +319,13 @@ class CVC5_Result_Parser:
                 rv += self.parse_seq(etyp)
         elif self.ct.value == "seq.unit":
             rv = [self.parse_value(etyp)]
+        elif self.ct.value == "as":
+            self.match("IDENTIFIER", "seq.empty")
+            self.match("BRA")
+            while self.nt and not self.peek("KET"):
+                self.advance()
+            self.match("KET")
+            rv = []
         else:  # pragma: no cover
             self.error("unexpected seq op %s" % self.ct.value)
         self.match("KET")
@@ -307,11 +339,10 @@ class CVC5_Result_Parser:
         assert isinstance(typ, smt.Record)
         self.match("BRA")
         self.match("IDENTIFIER")
-        if SMTLIB_Generator.escape_name(typ.name + "__cons") != \
-           self.ct.value:  # pragma: no cover
+        if typ.name + "__cons" != self.ct.value:  # pragma: no cover
             self.error("unexpected constructor %s (expected %s)" %
                        (self.ct.value,
-                        SMTLIB_Generator.escape_name(typ.name + "__cons")))
+                        typ.name + "__cons"))
         rv = {}
         for name, sort in typ.components.items():
             rv[name] = self.parse_value(sort)
