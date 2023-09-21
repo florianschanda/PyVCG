@@ -9,6 +9,8 @@ the future.
 This is pretty limited for now as the initial target is the expression
 language of [TRLC](https://github.com/bmw-software-engineering/trlc).
 
+Please refer to the [Changelog](CHANGELOG.md) for what's new.
+
 ## Features
 
 This library provides a wrapper around SMTLIB with some additional
@@ -54,7 +56,7 @@ Current support for outputs:
 
 ### Run-time
 
-* Python >= 3.9
+* Python >= 3.8
 * [cvc5](https://pypi.org/project/cvc5)
 
 ### Development
