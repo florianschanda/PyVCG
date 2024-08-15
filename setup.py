@@ -47,7 +47,7 @@ setuptools.setup(
     license="GNU General Public License v3",
     packages=["pyvcg", "pyvcg.driver"],
     extras_require={
-        "api": ["cvc5==1.0.8"],
+        "api": ["cvc5==1.2.0"],
     },
     python_requires=">=3.8",
     classifiers=[

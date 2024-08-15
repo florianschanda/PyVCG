@@ -10,7 +10,7 @@
 
 ### 1.0.7-dev
 
-
+* Move to CVC 1.2.0. This should now include Windows support.
 
 ### 1.0.6
 
