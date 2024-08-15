@@ -8,7 +8,7 @@
 ## Changelog
 
 
-### 1.0.7-dev
+### 1.0.7
 
 * Move to CVC 1.2.0. This should now include Windows support.
 
