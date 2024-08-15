@@ -260,6 +260,7 @@ class CVC5_Result_Parser:
             self.match("NUMBER")
             rv = self.ct.value
 
+        # pylint: disable=possibly-used-before-assignment
         return rv
 
     def parse_real(self):
