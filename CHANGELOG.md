@@ -10,7 +10,8 @@
 
 ### 1.0.8-dev
 
-
+* Move to CVC 1.3.0. This should now include Python support up to
+  3.13.
 
 ### 1.0.7
 
