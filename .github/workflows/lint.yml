@@ -21,10 +21,10 @@ jobs:
           uri: 'https://github.com/cvc5/cvc5/releases/download/cvc5-1.0.8/cvc5-Linux'
           name: 'cvc5'
           version: '1.0.8'
-      - name: Set up Python 3.12
+      - name: Set up Python 3.13
         uses: actions/setup-python@v3
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
