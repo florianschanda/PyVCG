@@ -23,7 +23,7 @@
 ##############################################################################
 
 VERSION_TUPLE = (1, 0, 8)
-VERSION_SUFFIX = "dev"
+VERSION_SUFFIX = ""
 
 PYVCG_VERSION = ("%u.%u.%u" % VERSION_TUPLE) + \
     ("-%s" % VERSION_SUFFIX if VERSION_SUFFIX else "")
