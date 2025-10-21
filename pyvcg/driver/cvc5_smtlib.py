@@ -338,6 +338,13 @@ class CVC5_Result_Parser:
 
     def parse_record(self, typ):
         assert isinstance(typ, smt.Record)
+
+        if self.nt.value and self.nt.value.endswith("__nil"):
+            self.advance()
+            return None
+        if not typ.components:
+            self.match("IDENTIFIER")
+            return {}
         self.match("BRA")
         self.match("IDENTIFIER")
         if typ.name + "__cons" != self.ct.value:  # pragma: no cover

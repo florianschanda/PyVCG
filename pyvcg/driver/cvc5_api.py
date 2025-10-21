@@ -55,6 +55,9 @@ class CVC5_Solver(smt.VC_Solver):
             return rv
         elif isinstance(sort, smt.Record):
             assert term.getKind() == cvc5.Kind.APPLY_CONSTRUCTOR
+            cons_name = str(term[0])
+            if cons_name.endswith("__nil"):
+                return None
             rv = {}
             for idx, name in enumerate(sort.components, 1):
                 rv[name] = self.term_to_python(sort.components[name],
@@ -254,13 +257,34 @@ class CVC5_Solver(smt.VC_Solver):
 
     def visit_record_declaration(self, node):
         assert isinstance(node, smt.Record_Declaration)
+        is_recursive = node.is_recursive()
 
-        ctor = self.solver.mkDatatypeConstructorDecl(node.sort.name +
-                                                     "__cons")
-        for name, sort in node.sort.components.items():
-            ctor.addSelector(name, sort.walk(self))
+        unresolved = None
+        if is_recursive:
+            unresolved = self.solver.mkUnresolvedDatatypeSort(node.sort.name)
+            self.record_mapping[node.sort] = unresolved
 
-        sort = self.solver.declareDatatype(node.sort.name, ctor)
+        cons_ctor = self.solver.mkDatatypeConstructorDecl(
+            node.sort.name + "__cons")
+        for field_name, field_sort in node.sort.components.items():
+            if is_recursive:
+                if isinstance(field_sort, smt.Record) and \
+                   field_sort.has_recursive_type(node.sort):
+                    sel_sort = self.record_mapping.get(node.sort,
+                                                       unresolved)
+                else:
+                    sel_sort = field_sort.walk(self)
+            else:
+                sel_sort = field_sort.walk(self)
+            cons_ctor.addSelector(field_name, sel_sort)
+
+        ctors = [cons_ctor]
+        if is_recursive:
+            nil_ctor = self.solver.mkDatatypeConstructorDecl(
+                node.sort.name + "__nil")
+            ctors.insert(0, nil_ctor)
+
+        sort = self.solver.declareDatatype(node.sort.name, *ctors)
         self.record_mapping[node.sort] = sort
 
     def visit_sort(self, node):

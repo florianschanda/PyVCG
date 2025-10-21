@@ -965,9 +965,11 @@ class SMTBasicTests(unittest.TestCase):
             (set-logic QF_DTSLIA)
             (set-option :produce-models true)
 
-            (declare-datatype Kitten ((Kitten__cons
-              (legs Int)
-              (name String))))
+            (declare-datatype Kitten (
+              (Kitten__cons
+                (legs Int)
+                (name String)
+            )))
             (declare-const a Kitten)
             (assert (= (legs a) 4))
             (assert (= (name a) "fuzzy"))
@@ -978,6 +980,92 @@ class SMTBasicTests(unittest.TestCase):
         )
         self.assertValue("a", {"name": "fuzzy",
                                "legs": 4})
+
+    def test_Recursive_Record(self):
+        s_sort = smt.Record("MyType")
+        s_sort.add_component("name", smt.BUILTIN_STRING)
+        s_sort.add_component("link", s_sort)
+        self.script.add_statement(smt.Record_Declaration(s_sort))
+
+        child_rec = smt.Constant(s_sort, "childNode")
+        self.script.add_statement(
+            smt.Constant_Declaration(child_rec, relevant=True))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(child_rec, "name"),
+                               smt.String_Literal('child'))))
+
+        root_rec = smt.Constant(s_sort, "rootNode")
+        self.script.add_statement(
+            smt.Constant_Declaration(root_rec, relevant=True))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(root_rec, "name"),
+                               smt.String_Literal('root'))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(root_rec, "link"),
+                               child_rec)))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_DTS)
+            (set-option :produce-models true)
+
+            (declare-datatype MyType (
+                (MyType__nil)
+                (MyType__cons
+                    (name String)
+                    (link MyType)
+            )))
+            (declare-const childNode MyType)
+            (assert (= (name childNode) "child"))
+            (declare-const rootNode MyType)
+            (assert (= (name rootNode) "root"))
+            (assert (= (link rootNode) childNode))
+            (check-sat)
+            (get-value (childNode))
+            (get-value (rootNode))
+            (exit)
+            """
+        )
+
+        self.assertValue(
+            "childNode",
+            {
+                "name": "child",
+                "link": {
+                    "name": "",
+                    "link": None
+                }
+            }
+        )
+
+    def test_Record_without_component(self):
+        s_sort = smt.Record("MyType")
+        self.script.add_statement(smt.Record_Declaration(s_sort))
+        child_rec = smt.Constant(s_sort, "childNode")
+        self.script.add_statement(
+            smt.Constant_Declaration(child_rec, relevant=True))
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_DT)
+            (set-option :produce-models true)
+
+            (declare-datatype MyType (
+                (MyType__cons)))
+            (declare-const childNode MyType)
+            (check-sat)
+            (get-value (childNode))
+            (exit)
+            """
+        )
+        self.assertValue("childNode", {})
 
     def test_UF_No_Body(self):
         s_par = smt.Bound_Variable(smt.BUILTIN_INTEGER, "x")
@@ -1167,3 +1255,43 @@ class SMTBasicTests(unittest.TestCase):
         )
         # Algebraic number not supported yet
         self.assertValue("a", None)
+
+    def test_has_recursive_type_simple(self):
+        r = smt.Record("R_self")
+        self.assertTrue(r.has_recursive_type(r))
+
+        r1 = smt.Record("R1")
+        r1.add_component("f", smt.BUILTIN_INTEGER)
+        r_other = smt.Record("Other")
+        self.assertFalse(r1.has_recursive_type(r_other))
+
+        r2 = smt.Record("R2")
+        r2.add_component("next", r2)
+        self.assertTrue(r2.has_recursive_type(r2))
+
+        r2 = smt.Record("R_seq")
+        r2.add_component("next", r2)
+        seq = smt.Parametric_Sort("Other", *[smt.BUILTIN_INTEGER, r2])
+        self.assertTrue(seq.has_recursive_type(r2))
+
+        r3 = smt.Record("R_seq")
+        seq = smt.Parametric_Sort("Other", *[smt.BUILTIN_INTEGER, r2])
+        self.assertFalse(seq.has_recursive_type(r3))
+
+        a_r1 = smt.Record("A")
+        b_r1 = smt.Record("B")
+        a_r1.add_component("to_b", b_r1)
+        b_r1.add_component("to_a", a_r1)
+        visited = {id(a_r1)}
+        self.assertFalse(a_r1.has_recursive_type(b_r1, visited))
+
+        a_r2 = smt.Record("A")
+        b_r2 = smt.Record("B")
+        c_r2 = smt.Record("C")
+        a_r2.add_component("to_b", b_r2)
+        b_r2.add_component("to_c", c_r2)
+        self.assertTrue(a_r2.has_recursive_type(c_r2))
+
+        r3 = smt.Record("R3")
+        r3.add_component("flag.valid", r3)
+        self.assertFalse(r3.has_recursive_type(smt.BUILTIN_INTEGER))

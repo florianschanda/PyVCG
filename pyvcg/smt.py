@@ -237,6 +237,7 @@ class Logic_Visitor(Visitor):
     def __init__(self):
         self.logics    = set()
         self.functions = set()
+        self._visited_records = set()
 
     def get_logic_string(self):
         allowed_logics = set(["quant", "int", "real",
@@ -343,6 +344,9 @@ class Logic_Visitor(Visitor):
 
     def visit_record(self, node):
         assert isinstance(node, Record)
+        if node in self._visited_records:
+            return
+        self._visited_records.add(node)
         self.logics.add("datatypes")
         for sort in node.components.values():
             sort.walk(self)
@@ -531,6 +535,37 @@ class Sort(Node):
         assert isinstance(visitor, Visitor)
         return visitor.visit_sort(self)
 
+    def has_recursive_type(self, target_sort, visited=None):
+        """
+        Check if sort references target_sort
+        (directly or indirectly via fields)
+        """
+        if visited is None:
+            visited = set()
+
+        sid = id(self)
+        if sid in visited:
+            return False
+        visited.add(sid)
+
+        if self is target_sort:
+            return True
+
+        if isinstance(self, Parametric_Sort):
+            for parameter in self.parameters:
+                if parameter.has_recursive_type(target_sort, visited):
+                    return True
+        elif isinstance(self, Record):
+            comps = getattr(self, "components", None)
+            if not isinstance(comps, dict):  # pragma: no cover
+                return False
+            for comp_name, comp_sort in comps.items():
+                if comp_name.endswith(".valid"):
+                    continue
+                if comp_sort.has_recursive_type(target_sort, visited):
+                    return True
+        return False
+
 
 class Parametric_Sort(Sort, metaclass=ABCMeta):
     def __init__(self, name, *parameters):
@@ -666,6 +701,13 @@ class Record_Declaration(Statement):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_record_declaration(self)
+
+    def is_recursive(self):
+        target_sort = self.sort
+        for _, field_sort in self.sort.components.items():
+            if field_sort.has_recursive_type(target_sort):
+                return True
+        return False
 
 
 ##############################################################################

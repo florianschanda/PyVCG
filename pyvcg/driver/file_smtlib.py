@@ -172,13 +172,24 @@ class SMTLIB_Generator(smt.VC_Writer):
     def visit_record_declaration(self, node):
         assert isinstance(node, smt.Record_Declaration)
         self.emit_comment(node.comment)
-        self.lines.append("(declare-datatype %s ((%s" %
-                          (self.escape_name(node.sort.name),
-                           self.escape_name(node.sort.name + "__cons")))
-        for name, sort in node.sort.components.items():
-            self.lines.append("  (%s %s)" % (self.escape_name(name),
-                                             sort.walk(self)))
-        self.lines[-1] += ")))"
+
+        sort_name = self.escape_name(node.sort.name)
+        self.lines.append(f"(declare-datatype {sort_name} (")
+
+        if node.is_recursive():
+            nil_name = self.escape_name(node.sort.name + "__nil")
+            self.lines.append(f"  ({nil_name})")
+
+        cons_name = self.escape_name(node.sort.name + "__cons")
+        if node.sort.components:
+            self.lines.append(f"  ({cons_name}")
+            for name, sort in node.sort.components.items():
+                self.lines.append("  (%s %s)" % (self.escape_name(name),
+                                                 sort.walk(self)))
+            self.lines.append("  )")
+        else:
+            self.lines.append(f"  ({cons_name})")
+        self.lines[-1] += "))"
 
     def visit_sort(self, node):
         assert isinstance(node, smt.Sort)
