@@ -10,7 +10,14 @@
 
 ### 1.0.9-dev
 
+* Reject recursive trees. Thank you to Melody Ma for uncovering
+  it. The API now raises an exception `Recursion` if you attempt to
+  construct an AST that is not a DAG. (Note: you can of course still
+  re-use nodes, as long as there are no loop in the DAG.)
 
+* Move to CVC 1.3.1.
+
+* Add support for Python up to 3.14.
 
 ### 1.0.8
 
