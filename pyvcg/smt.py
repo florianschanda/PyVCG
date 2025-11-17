@@ -27,6 +27,14 @@ from fractions import Fraction
 
 
 ##############################################################################
+# Exceptions
+##############################################################################
+
+class Recursion(Exception):
+    pass
+
+
+##############################################################################
 # Abstract Visitors
 ##############################################################################
 
@@ -478,6 +486,23 @@ class Node(metaclass=ABCMeta):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
 
+    def check_recursion(self):
+        visited = set()
+        self.check_recursion_rec(visited)
+
+    @abstractmethod
+    def check_recursion_rec(self, visited):
+        assert isinstance(visited, set)
+        assert all(isinstance(n, Node) for n in visited)
+
+    def check_recursion_enforce(self, visited):
+        assert isinstance(visited, set)
+        assert all(isinstance(n, Node) for n in visited)
+        if self in visited:
+            raise Recursion("cannot be recursive")
+        new_visited = visited | {self}
+        return new_visited
+
 
 ##############################################################################
 # Top-level items
@@ -495,8 +520,14 @@ class Script(Node):
                                     self.logic.get_logic_string(),
                                     self.logic.get_required_functions())
 
+    def check_recursion_rec(self, visited):  # pragma: no cover
+        assert isinstance(visited, set)
+        assert all(isinstance(n, Node) for n in visited)
+        assert False
+
     def add_statement(self, statement):
         assert isinstance(statement, Statement)
+        statement.check_recursion()
         self.statements.append(statement)
         statement.walk(self.logic)
 
@@ -531,6 +562,9 @@ class Sort(Node):
         assert isinstance(visitor, Visitor)
         return visitor.visit_sort(self)
 
+    def check_recursion_rec(self, visited):
+        self.check_recursion_enforce(visited)
+
 
 class Parametric_Sort(Sort, metaclass=ABCMeta):
     def __init__(self, name, *parameters):
@@ -544,6 +578,11 @@ class Parametric_Sort(Sort, metaclass=ABCMeta):
         tr_parameters = [parameter.walk(visitor)
                          for parameter in self.parameters]
         return visitor.visit_parametric_sort(self, tr_parameters)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        for parameter in self.parameters:
+            parameter.check_recursion_rec(new_visited)
 
 
 BUILTIN_BOOLEAN = Sort("Bool")
@@ -588,6 +627,14 @@ class Function(Node):
         assert isinstance(visitor, Visitor)
         return visitor.visit_function(self)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        for parameter in self.parameters:
+            parameter.check_recursion_rec(new_visited)
+        if self.body is not None:
+            self.body.check_recursion_rec(new_visited)
+
 
 ##############################################################################
 # Statements
@@ -614,6 +661,12 @@ class Constant_Declaration(Statement):
             tr_value = self.value.walk(visitor)
         return visitor.visit_constant_declaration(self, tr_symbol, tr_value)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.symbol.check_recursion_rec(new_visited)
+        if self.value is not None:
+            self.value.check_recursion_rec(new_visited)
+
 
 class Function_Declaration(Statement):
     def __init__(self, function, comment=None):
@@ -632,6 +685,10 @@ class Function_Declaration(Statement):
                                                   tr_sort,
                                                   tr_body)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.function.check_recursion_rec(new_visited)
+
 
 class Assertion(Statement):
     def __init__(self, expression, comment=None):
@@ -645,6 +702,10 @@ class Assertion(Statement):
         assert isinstance(visitor, Visitor)
         return visitor.visit_assertion(self, self.expression.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.expression.check_recursion_rec(new_visited)
+
 
 class Enumeration_Declaration(Statement):
     def __init__(self, sort, comment=None):
@@ -656,6 +717,10 @@ class Enumeration_Declaration(Statement):
         assert isinstance(visitor, Visitor)
         return visitor.visit_enumeration_declaration(self)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+
 
 class Record_Declaration(Statement):
     def __init__(self, sort, comment=None):
@@ -666,6 +731,10 @@ class Record_Declaration(Statement):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_record_declaration(self)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
 
 
 ##############################################################################
@@ -687,6 +756,9 @@ class Enumeration(Sort):
         assert isinstance(visitor, Visitor)
         return visitor.visit_enumeration(self)
 
+    def check_recursion_rec(self, visited):
+        self.check_recursion_enforce(visited)
+
 
 class Record(Sort):
     def __init__(self, name):
@@ -703,6 +775,11 @@ class Record(Sort):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_record(self)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        for component in self.components.values():
+            component.check_recursion_rec(new_visited)
 
 
 class Sequence_Sort(Parametric_Sort):
@@ -725,6 +802,10 @@ class Sequence_Sort(Parametric_Sort):
 class Literal(Expression, metaclass=ABCMeta):
     def is_static(self):
         return True
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
 
 
 class Boolean_Literal(Literal):
@@ -805,6 +886,10 @@ class Constant(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_constant(self, self.sort.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+
 
 class Bound_Variable(Expression):
     def __init__(self, sort, name):
@@ -815,6 +900,10 @@ class Bound_Variable(Expression):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_bound_variable(self, self.sort.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
 
 
 ##############################################################################
@@ -833,6 +922,11 @@ class Boolean_Negation(Expression):
         return visitor.visit_boolean_negation(self,
                                               self.sort.walk(visitor),
                                               self.expression.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.expression.check_recursion_rec(new_visited)
 
 
 class Conjunction(Expression):
@@ -853,6 +947,12 @@ class Conjunction(Expression):
                                          self.sort.walk(visitor),
                                          tr_terms)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        for term in self.terms:
+            term.check_recursion_rec(new_visited)
+
 
 class Disjunction(Expression):
     def __init__(self, *terms):
@@ -872,6 +972,12 @@ class Disjunction(Expression):
                                          self.sort.walk(visitor),
                                          tr_terms)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        for term in self.terms:
+            term.check_recursion_rec(new_visited)
+
 
 class Exclusive_Disjunction(Expression):
     def __init__(self, lhs, rhs):
@@ -889,6 +995,12 @@ class Exclusive_Disjunction(Expression):
                                                    self.lhs.walk(visitor),
                                                    self.rhs.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
+
 
 class Implication(Expression):
     def __init__(self, lhs, rhs):
@@ -905,6 +1017,12 @@ class Implication(Expression):
                                          self.sort.walk(visitor),
                                          self.lhs.walk(visitor),
                                          self.rhs.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
 
 
 ##############################################################################
@@ -929,6 +1047,12 @@ class Comparison(Expression):
         tr_rhs = self.rhs.walk(visitor)
         return visitor.visit_comparison(self, tr_lhs, tr_rhs)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
+
 
 ##############################################################################
 # Arithmetic & Functions
@@ -946,6 +1070,11 @@ class Conversion_To_Real(Expression):
         return visitor.visit_conversion_to_real(self,
                                                 self.value.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.value.check_recursion_rec(new_visited)
+
 
 class Conversion_To_Integer(Expression):
     def __init__(self, rounding, value):
@@ -960,6 +1089,11 @@ class Conversion_To_Integer(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_conversion_to_integer(self,
                                                    self.value.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.value.check_recursion_rec(new_visited)
 
 
 class Unary_Int_Arithmetic_Op(Expression):
@@ -977,6 +1111,11 @@ class Unary_Int_Arithmetic_Op(Expression):
         tr_operand = self.operand.walk(visitor)
         return visitor.visit_unary_int_arithmetic_op(self, tr_operand)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.operand.check_recursion_rec(new_visited)
+
 
 class Unary_Real_Arithmetic_Op(Expression):
     def __init__(self, operator, operand):
@@ -992,6 +1131,11 @@ class Unary_Real_Arithmetic_Op(Expression):
         assert isinstance(visitor, Visitor)
         tr_operand = self.operand.walk(visitor)
         return visitor.visit_unary_real_arithmetic_op(self, tr_operand)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.operand.check_recursion_rec(new_visited)
 
 
 class Binary_Int_Arithmetic_Op(Expression):
@@ -1014,6 +1158,12 @@ class Binary_Int_Arithmetic_Op(Expression):
         tr_rhs = self.rhs.walk(visitor)
         return visitor.visit_binary_int_arithmetic_op(self, tr_lhs, tr_rhs)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
+
 
 class Binary_Real_Arithmetic_Op(Expression):
     def __init__(self, operator, lhs, rhs):
@@ -1034,6 +1184,12 @@ class Binary_Real_Arithmetic_Op(Expression):
         tr_rhs = self.rhs.walk(visitor)
         return visitor.visit_binary_real_arithmetic_op(self, tr_lhs, tr_rhs)
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
+
 
 class String_Length(Expression):
     def __init__(self, string):
@@ -1045,6 +1201,11 @@ class String_Length(Expression):
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
         return visitor.visit_string_length(self, self.string.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.string.check_recursion_rec(new_visited)
 
 
 class String_Predicate(Expression):
@@ -1065,6 +1226,12 @@ class String_Predicate(Expression):
                                               self.first.walk(visitor),
                                               self.second.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.first.check_recursion_rec(new_visited)
+        self.second.check_recursion_rec(new_visited)
+
 
 class String_Concatenation(Expression):
     def __init__(self, lhs, rhs):
@@ -1082,6 +1249,12 @@ class String_Concatenation(Expression):
                                                   self.lhs.walk(visitor),
                                                   self.rhs.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
+
 
 class Sequence_Length(Expression):
     def __init__(self, sequence):
@@ -1094,6 +1267,11 @@ class Sequence_Length(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_sequence_length(self,
                                              self.sequence.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.sequence.check_recursion_rec(new_visited)
 
 
 class Sequence_Index(Expression):
@@ -1112,6 +1290,12 @@ class Sequence_Index(Expression):
                                             self.sequence.walk(visitor),
                                             self.index.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.sequence.check_recursion_rec(new_visited)
+        self.index.check_recursion_rec(new_visited)
+
 
 class Sequence_Contains(Expression):
     def __init__(self, sequence, item):
@@ -1128,6 +1312,12 @@ class Sequence_Contains(Expression):
         return visitor.visit_sequence_contains(self,
                                                self.sequence.walk(visitor),
                                                self.item.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.sequence.check_recursion_rec(new_visited)
+        self.item.check_recursion_rec(new_visited)
 
 
 class Sequence_Concatenation(Expression):
@@ -1146,6 +1336,12 @@ class Sequence_Concatenation(Expression):
                                                     self.lhs.walk(visitor),
                                                     self.rhs.walk(visitor))
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.lhs.check_recursion_rec(new_visited)
+        self.rhs.check_recursion_rec(new_visited)
+
 
 class Record_Access(Expression):
     def __init__(self, record, component):
@@ -1161,6 +1357,11 @@ class Record_Access(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_record_access(self,
                                            self.record.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.record.check_recursion_rec(new_visited)
 
 
 class Function_Application(Expression):
@@ -1182,6 +1383,13 @@ class Function_Application(Expression):
             self.function.walk(visitor),
             [arg.walk(visitor) for arg in self.arguments])
 
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.function.check_recursion_rec(new_visited)
+        for argument in self.arguments:
+            argument.check_recursion_rec(new_visited)
+
 
 class Conditional(Expression):
     def __init__(self, condition, true_expression, false_expression):
@@ -1201,6 +1409,13 @@ class Conditional(Expression):
                                          self.condition.walk(visitor),
                                          self.true_expression.walk(visitor),
                                          self.false_expression.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.condition.check_recursion_rec(new_visited)
+        self.true_expression.check_recursion_rec(new_visited)
+        self.false_expression.check_recursion_rec(new_visited)
 
 
 ##############################################################################
@@ -1225,3 +1440,10 @@ class Quantifier(Expression):
         return visitor.visit_quantifier(self,
                                         tr_variables,
                                         self.body.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        for var in self.variables:
+            var.check_recursion_rec(new_visited)
+        self.body.check_recursion_rec(new_visited)

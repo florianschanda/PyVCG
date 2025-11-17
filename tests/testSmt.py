@@ -979,6 +979,13 @@ class SMTBasicTests(unittest.TestCase):
         self.assertValue("a", {"name": "fuzzy",
                                "legs": 4})
 
+    def test_Recursive_Record(self):
+        s_sort = smt.Record("MyType")
+        s_sort.add_component("name", smt.BUILTIN_STRING)
+        s_sort.add_component("link", s_sort)
+        with self.assertRaises(smt.Recursion):
+            self.script.add_statement(smt.Record_Declaration(s_sort))
+
     def test_UF_No_Body(self):
         s_par = smt.Bound_Variable(smt.BUILTIN_INTEGER, "x")
         s_fun = smt.Function("potato", smt.BUILTIN_INTEGER, s_par)
