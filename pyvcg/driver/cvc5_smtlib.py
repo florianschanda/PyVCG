@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023, Florian Schanda                         ##
+##              Copyright (C) 2023-2025, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -338,16 +338,24 @@ class CVC5_Result_Parser:
 
     def parse_record(self, typ):
         assert isinstance(typ, smt.Record)
-        self.match("BRA")
-        self.match("IDENTIFIER")
-        if typ.name + "__cons" != self.ct.value:  # pragma: no cover
-            self.error("unexpected constructor %s (expected %s)" %
-                       (self.ct.value,
-                        typ.name + "__cons"))
-        rv = {}
-        for name, sort in typ.components.items():
-            rv[name] = self.parse_value(sort)
-        self.match("KET")
+        if self.peek("BRA") or not typ.is_recursive:
+            self.match("BRA")
+            self.match("IDENTIFIER")
+            if typ.name + "__cons" != self.ct.value:  # pragma: no cover
+                self.error("unexpected constructor %s (expected %s)" %
+                           (self.ct.value,
+                            typ.name + "__cons"))
+            rv = {}
+            for name, sort in typ.components.items():
+                rv[name] = self.parse_value(sort)
+            self.match("KET")
+        else:
+            self.match("IDENTIFIER")
+            if typ.name + "__null" != self.ct.value:  # pragma: no cover
+                self.error("unexpected constructor %s (expected %s)" %
+                           (self.ct.value,
+                            typ.name + "__null"))
+            rv = None
         return rv
 
 
@@ -375,13 +383,20 @@ class CVC5_File_Solver(SMTLIB_Generator, smt.VC_Solver):
         self.records[node.sort.name] = node.sort
 
     def solve(self):
-        result = subprocess.run([self.binary,
-                                 "--lang=smt2",
-                                 "-"],
-                                input          = self.instance,
-                                capture_output = True,
-                                check          = True,
-                                encoding       = "UTF-8")
+        try:
+            result = subprocess.run([self.binary,
+                                     "--lang=smt2",
+                                     "-"],
+                                    input          = self.instance,
+                                    capture_output = True,
+                                    check          = True,
+                                    encoding       = "UTF-8")
+        except subprocess.CalledProcessError as err:  # pragma: no cover
+            print(self.instance)
+            print(err.stdout)
+            print(err.stderr)
+            raise err
+
         lines = result.stdout.splitlines()
         status, tail = lines[0].strip(), lines[1:]
         assert status in ("sat", "unsat", "unknown"), \

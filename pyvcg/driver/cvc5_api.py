@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023, Florian Schanda                         ##
+##              Copyright (C) 2023-2025, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -55,11 +55,18 @@ class CVC5_Solver(smt.VC_Solver):
             return rv
         elif isinstance(sort, smt.Record):
             assert term.getKind() == cvc5.Kind.APPLY_CONSTRUCTOR
-            rv = {}
-            for idx, name in enumerate(sort.components, 1):
-                rv[name] = self.term_to_python(sort.components[name],
-                                               term[idx])
-            return rv
+            cons_name = term[0].getSymbol()
+            assert isinstance(cons_name, str)
+            assert cons_name.endswith("__cons") or cons_name.endswith("__null")
+            if cons_name.endswith("__null"):
+                assert sort.is_recursive
+                return None
+            else:
+                rv = {}
+                for idx, name in enumerate(sort.components, 1):
+                    rv[name] = self.term_to_python(sort.components[name],
+                                                   term[idx])
+                return rv
         elif sort.name == "Bool":
             return term.getBooleanValue()
         elif sort.name == "Int":
@@ -258,9 +265,19 @@ class CVC5_Solver(smt.VC_Solver):
         ctor = self.solver.mkDatatypeConstructorDecl(node.sort.name +
                                                      "__cons")
         for name, sort in node.sort.components.items():
-            ctor.addSelector(name, sort.walk(self))
+            if sort is node.sort:
+                ctor.addSelectorSelf(name)
+            else:
+                ctor.addSelector(name, sort.walk(self))
 
-        sort = self.solver.declareDatatype(node.sort.name, ctor)
+        if node.sort.is_recursive:
+            null_ctor = self.solver.mkDatatypeConstructorDecl(node.sort.name +
+                                                              "__null")
+            sort = self.solver.declareDatatype(node.sort.name,
+                                               null_ctor,
+                                               ctor)
+        else:
+            sort = self.solver.declareDatatype(node.sort.name, ctor)
         self.record_mapping[node.sort] = sort
 
     def visit_sort(self, node):
@@ -482,6 +499,17 @@ class CVC5_Solver(smt.VC_Solver):
         return self.solver.mkTerm(cvc5.Kind.APPLY_SELECTOR,
                                   s_selector.getTerm(),
                                   tr_record)
+
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, smt.Record_Null_Check)
+        s_record_sort = self.record_mapping[node.record.sort]
+        s_dt = s_record_sort.getDatatype()
+        s_cons = s_dt.getConstructor(node.record.sort.name + "__null")
+        return self.solver.mkTerm(
+            cvc5.Kind.EQUAL,
+            tr_record,
+            self.solver.mkTerm(cvc5.Kind.APPLY_CONSTRUCTOR,
+                               s_cons.getTerm()))
 
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, smt.Function_Application)

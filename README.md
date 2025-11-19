@@ -24,7 +24,7 @@ features:
   [String](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html)
 * Parametric sorts:
   [Sequences](https://cvc5.github.io/docs-ci/docs-main/theories/sequences.html)
-* Datatype sorts: Enumerations and Records
+* Datatype sorts: Enumerations and Records (including self-recursive records)
 * Uninterpreted functions
 * Quantifiers
 * Boolean expressions: not, and, or, xor, implication

@@ -199,6 +199,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Record_Access)
 
     @abstractmethod
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, Record_Null_Check)
+
+    @abstractmethod
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, Function_Application)
         assert isinstance(tr_args, list)
@@ -353,7 +357,8 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Record)
         self.logics.add("datatypes")
         for sort in node.components.values():
-            sort.walk(self)
+            if sort is not node:
+                sort.walk(self)
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
@@ -462,6 +467,10 @@ class Logic_Visitor(Visitor):
 
     def visit_record_access(self, node, tr_record):
         assert isinstance(node, Record_Access)
+        self.logics.add("datatypes")
+
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, Record_Null_Check)
         self.logics.add("datatypes")
 
     def visit_function_application(self, node, tr_function, tr_args):
@@ -763,7 +772,8 @@ class Enumeration(Sort):
 class Record(Sort):
     def __init__(self, name):
         super().__init__(name)
-        self.components  = {}
+        self.components   = {}
+        self.is_recursive = False
 
     def add_component(self, name, sort):
         assert isinstance(name, str)
@@ -771,6 +781,7 @@ class Record(Sort):
         assert name not in self.components
 
         self.components[name] = sort
+        self.is_recursive |= sort is self
 
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
@@ -778,8 +789,9 @@ class Record(Sort):
 
     def check_recursion_rec(self, visited):
         new_visited = self.check_recursion_enforce(visited)
-        for component in self.components.values():
-            component.check_recursion_rec(new_visited)
+        for component_type in self.components.values():
+            if component_type is not self:
+                component_type.check_recursion_rec(new_visited)
 
 
 class Sequence_Sort(Parametric_Sort):
@@ -1357,6 +1369,25 @@ class Record_Access(Expression):
         assert isinstance(visitor, Visitor)
         return visitor.visit_record_access(self,
                                            self.record.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.record.check_recursion_rec(new_visited)
+
+
+class Record_Null_Check(Expression):
+    def __init__(self, record):
+        assert isinstance(record, Expression)
+        assert isinstance(record.sort, Record)
+        assert record.sort.is_recursive, "non-recursive records cannot be null"
+        super().__init__(BUILTIN_BOOLEAN)
+        self.record = record
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_record_null_check(self,
+                                               self.record.walk(visitor))
 
     def check_recursion_rec(self, visited):
         new_visited = self.check_recursion_enforce(visited)

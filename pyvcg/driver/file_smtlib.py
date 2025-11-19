@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023, Florian Schanda                         ##
+##              Copyright (C) 2023-2025, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -172,12 +172,21 @@ class SMTLIB_Generator(smt.VC_Writer):
     def visit_record_declaration(self, node):
         assert isinstance(node, smt.Record_Declaration)
         self.emit_comment(node.comment)
-        self.lines.append("(declare-datatype %s ((%s" %
-                          (self.escape_name(node.sort.name),
-                           self.escape_name(node.sort.name + "__cons")))
+        self.lines.append("(declare-datatype %s ("
+                          % self.escape_name(node.sort.name))
+        if node.sort.is_recursive:
+            self.lines.append("  (%s)" %
+                              self.escape_name(node.sort.name + "__null"))
+        self.lines.append("  (%s" %
+                          self.escape_name(node.sort.name + "__cons"))
         for name, sort in node.sort.components.items():
-            self.lines.append("  (%s %s)" % (self.escape_name(name),
-                                             sort.walk(self)))
+            if sort is node.sort:
+                self.lines.append("    (%s %s)" %
+                                  (self.escape_name(name),
+                                   self.escape_name(node.sort.name)))
+            else:
+                self.lines.append("    (%s %s)" % (self.escape_name(name),
+                                                   sort.walk(self)))
         self.lines[-1] += ")))"
 
     def visit_sort(self, node):
@@ -320,6 +329,12 @@ class SMTLIB_Generator(smt.VC_Writer):
     def visit_record_access(self, node, tr_record):
         assert isinstance(node, smt.Record_Access)
         return "(%s %s)" % (node.component, tr_record)
+
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, smt.Record_Null_Check)
+        return "(= %s %s)" % (
+            tr_record,
+            self.escape_name(node.record.sort.name + "__null"))
 
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, smt.Function_Application)

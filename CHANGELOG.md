@@ -15,6 +15,16 @@
   construct an AST that is not a DAG. (Note: you can of course still
   re-use nodes, as long as there are no loop in the DAG.)
 
+* Add support for self-recursive records. This is a pre-cursor to full
+  mutual recursion, but it is enough for TRLC.
+
+  * The `add_component` method of `Record` can take the record sort
+    itself.
+
+  * A new expression `Record_Null_Check` can be used to check if a
+    given term is equal to the null constructor. This can only be used
+    on recursive records.
+
 * Move to CVC 1.3.1.
 
 * Add support for Python up to 3.14.
