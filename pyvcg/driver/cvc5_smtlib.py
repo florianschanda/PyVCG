@@ -338,7 +338,7 @@ class CVC5_Result_Parser:
 
     def parse_record(self, typ):
         assert isinstance(typ, smt.Record)
-        if self.peek("BRA") or not typ.is_recursive:
+        if self.peek("BRA"):
             self.match("BRA")
             self.match("IDENTIFIER")
             if typ.name + "__cons" != self.ct.value:  # pragma: no cover
@@ -351,11 +351,13 @@ class CVC5_Result_Parser:
             self.match("KET")
         else:
             self.match("IDENTIFIER")
-            if typ.name + "__null" != self.ct.value:  # pragma: no cover
-                self.error("unexpected constructor %s (expected %s)" %
-                           (self.ct.value,
-                            typ.name + "__null"))
-            rv = None
+            if self.ct.value == typ.name + "__null" and typ.is_recursive:
+                rv = None
+            elif self.ct.value == typ.name + "__cons":
+                rv = {}
+            else:  # pragma: no cover
+                self.error("unexpected constructor %s" %
+                           self.ct.value)
         return rv
 
 

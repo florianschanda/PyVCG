@@ -1038,6 +1038,31 @@ class SMTBasicTests(unittest.TestCase):
             """
         )
 
+    def test_Void_Records(self):
+        s_sort = smt.Record("Foo")
+        self.script.add_statement(smt.Record_Declaration(s_sort))
+
+        sym_a = smt.Constant(s_sort, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_DT)
+            (set-option :produce-models true)
+
+            (declare-datatype Foo (
+              (Foo__cons)))
+            (declare-const a Foo)
+            (check-sat)
+            (get-value (a))
+            (exit)
+            """
+        )
+        self.assertValue("a", {})
+
     def test_UF_No_Body(self):
         s_par = smt.Bound_Variable(smt.BUILTIN_INTEGER, "x")
         s_fun = smt.Function("potato", smt.BUILTIN_INTEGER, s_par)
