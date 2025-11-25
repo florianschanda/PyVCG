@@ -332,9 +332,9 @@ class SMTLIB_Generator(smt.VC_Writer):
 
     def visit_record_null_check(self, node, tr_record):
         assert isinstance(node, smt.Record_Null_Check)
-        return "(= %s %s)" % (
-            tr_record,
-            self.escape_name(node.record.sort.name + "__null"))
+        return "((_ is %s) %s)" % (
+            self.escape_name(node.record.sort.name + "__null"),
+            tr_record)
 
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, smt.Function_Application)

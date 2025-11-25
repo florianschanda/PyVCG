@@ -1030,10 +1030,86 @@ class SMTBasicTests(unittest.TestCase):
             (declare-const a List)
             (declare-const b List)
             (assert (= (value (next a)) 42))
-            (assert (not (= b List__null)))
+            (assert (not ((_ is List__null) b)))
             (check-sat)
             (get-value (a))
             (get-value (b))
+            (exit)
+            """
+        )
+
+    def test_Recursive_Record_Loop(self):
+        s_sort = smt.Record("List")
+        s_sort.add_component("value", smt.BUILTIN_INTEGER)
+        s_sort.add_component("next", s_sort)
+        self.script.add_statement(smt.Record_Declaration(s_sort))
+
+        sym_a = smt.Constant(s_sort, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        sym_b = smt.Constant(s_sort, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     relevant=True))
+        sym_c = smt.Constant(s_sort, "c")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_c,
+                                     relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(
+                    smt.Record_Null_Check(sym_a))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(
+                    smt.Record_Null_Check(sym_b))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(
+                    smt.Record_Null_Check(sym_c))))
+
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(sym_a, "next"),
+                               sym_b)))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(sym_b, "next"),
+                               sym_c)))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison("=",
+                               smt.Record_Access(sym_c, "next"),
+                               sym_a)))
+
+        self.assertResult(
+            "unsat",
+            """
+            (set-logic QF_DTLIA)
+            (set-option :produce-models true)
+
+            (declare-datatype List (
+              (List__null)
+              (List__cons
+                (value Int)
+                (next List))))
+            (declare-const a List)
+            (declare-const b List)
+            (declare-const c List)
+            (assert (not ((_ is List__null) a)))
+            (assert (not ((_ is List__null) b)))
+            (assert (not ((_ is List__null) c)))
+            (assert (= (next a) b))
+            (assert (= (next b) c))
+            (assert (= (next c) a))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (get-value (c))
             (exit)
             """
         )

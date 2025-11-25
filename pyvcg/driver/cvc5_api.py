@@ -506,10 +506,9 @@ class CVC5_Solver(smt.VC_Solver):
         s_dt = s_record_sort.getDatatype()
         s_cons = s_dt.getConstructor(node.record.sort.name + "__null")
         return self.solver.mkTerm(
-            cvc5.Kind.EQUAL,
-            tr_record,
-            self.solver.mkTerm(cvc5.Kind.APPLY_CONSTRUCTOR,
-                               s_cons.getTerm()))
+            cvc5.Kind.APPLY_TESTER,
+            s_cons.getTesterTerm(),
+            tr_record)
 
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, smt.Function_Application)

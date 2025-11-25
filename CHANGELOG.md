@@ -23,7 +23,12 @@
 
   * A new expression `Record_Null_Check` can be used to check if a
     given term is equal to the null constructor. This can only be used
-    on recursive records.
+    on recursive records. Note that if you have a recursive record,
+    then this is a pre-condition that you need to check on any access;
+    otherwise you might get unexpected results (it is perfectly
+    possible to access a record null constructor, you just get an
+    uninterpreted function result). This checking has to happen inside
+    the program driving PyVCG, it cannot happen inside PyVCG.
 
 * Move to CVC 1.3.1.
 
