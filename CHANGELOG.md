@@ -8,7 +8,7 @@
 ## Changelog
 
 
-### 1.0.9-dev
+### 1.0.9
 
 * Reject recursive trees. Thank you to Melody Ma for uncovering
   it. The API now raises an exception `Recursion` if you attempt to
