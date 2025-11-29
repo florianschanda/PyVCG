@@ -35,7 +35,7 @@ project_urls = {
 }
 
 setuptools.setup(
-    name="PyVCG",
+    name="pyvcg",
     version=version.PYVCG_VERSION,
     author="Florian Schanda",
     author_email="florian@schanda.org.uk",
