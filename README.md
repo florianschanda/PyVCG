@@ -53,8 +53,13 @@ modelling for language features (e.g. ite, loops) are planned later.
 
 Current support for outputs:
 
-* SMTLIB (for writing and debugging)
-* CVC5 API (for solving)
+* SMTLIB File Output (for debugging)
+* CVC5 via Python API (for solving)
+* CVC5 via Binary + SMTLIB (for solving)
+
+When getting models, both API and SMTLIB drivers translate back to
+Python values. For example if you have an optional Int, then asking
+for the model value you will get e.g. `None`, 0, 1, ...
 
 ## Dependencies
 
