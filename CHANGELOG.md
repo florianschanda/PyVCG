@@ -8,7 +8,7 @@
 ## Changelog
 
 
-### 1.0.10-dev
+### 1.0.10
 
 * Add support for "optional" types. These are really just datatypes
   with a single null constructor and a value constructor. However they
