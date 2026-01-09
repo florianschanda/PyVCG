@@ -1,4 +1,4 @@
-cvc5==1.3.1
+cvc5==1.3.2
 coverage
 pylint
 pycodestyle

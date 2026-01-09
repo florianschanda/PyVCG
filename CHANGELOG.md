@@ -14,6 +14,8 @@
   with a single null constructor and a value constructor. However they
   come out correctly in Python as `null` or the actual value.
 
+* Move to CVC 1.3.2
+
 ### 1.0.9
 
 * Reject recursive trees. Thank you to Melody Ma for uncovering
