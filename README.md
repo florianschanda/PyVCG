@@ -24,7 +24,10 @@ features:
   [String](https://cvc5.github.io/docs-ci/docs-main/theories/strings.html)
 * Parametric sorts:
   [Sequences](https://cvc5.github.io/docs-ci/docs-main/theories/sequences.html)
-* Datatype sorts: Enumerations and Records (including self-recursive records)
+* Convenience wrappers around datatype sorts:
+  * Enumerations
+  * Records (including self-recursive records)
+  * Optionals
 * Uninterpreted functions
 * Quantifiers
 * Boolean expressions: not, and, or, xor, implication
@@ -39,7 +42,8 @@ features:
 * Binary Real arithmetic: +, -, *, /
 * String operations: length, contains, prefix, suffix, concatenation
 * Sequence operations: length, contains, access, concatenation
-* Record operations: access
+* Record operations: access, check for null (for recursive records)
+* Optional operations: value, check for null
 
 In addition this library provides a graph to build VCs with multiple
 paths; and generating VCs for all paths. FastWP and higher-level
