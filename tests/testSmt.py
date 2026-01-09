@@ -1327,3 +1327,52 @@ class SMTBasicTests(unittest.TestCase):
         )
         # Algebraic number not supported yet
         self.assertValue("a", None)
+
+    def test_optionals(self):
+        sort = smt.Optional(smt.BUILTIN_INTEGER)
+        self.script.add_statement(smt.Optional_Declaration(sort))
+
+        sym_a = smt.Constant(sort, "a")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_a,
+                                     relevant=True))
+        sym_b = smt.Constant(sort, "b")
+        self.script.add_statement(
+            smt.Constant_Declaration(sym_b,
+                                     relevant=True))
+
+        self.script.add_statement(
+            smt.Assertion(smt.Optional_Null_Check(sym_a)))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Boolean_Negation(smt.Optional_Null_Check(sym_b))))
+        self.script.add_statement(
+            smt.Assertion(
+                smt.Comparison(">",
+                               smt.Optional_Value(sym_b),
+                               smt.Integer_Literal(5))))
+
+        self.assertResult(
+            "sat",
+            """
+            (set-logic QF_DTLIA)
+            (set-option :produce-models true)
+
+            (declare-datatype optional__Int (
+              (optional__Int__null)
+              (optional__Int__cons
+                (value Int))))
+            (declare-const a optional__Int)
+            (declare-const b optional__Int)
+            (assert ((_ is optional__Int__null) a))
+            (assert (not ((_ is optional__Int__null) b)))
+            (assert (> (value b) 5))
+            (check-sat)
+            (get-value (a))
+            (get-value (b))
+            (exit)
+            """
+        )
+
+        self.assertValue("a", None)
+        self.assertValue("b", 6)

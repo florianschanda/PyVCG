@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023-2025, Florian Schanda                    ##
+##              Copyright (C) 2023-2026, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -189,6 +189,19 @@ class SMTLIB_Generator(smt.VC_Writer):
                                                    sort.walk(self)))
         self.lines[-1] += ")))"
 
+    def visit_optional_declaration(self, node):
+        assert isinstance(node, smt.Optional_Declaration)
+        self.emit_comment(node.comment)
+        self.lines.append("(declare-datatype %s ("
+                          % self.escape_name(node.sort.name))
+        self.lines.append("  (%s)" %
+                          self.escape_name(node.sort.name + "__null"))
+        self.lines.append("  (%s" %
+                          self.escape_name(node.sort.name + "__cons"))
+        self.lines.append("    (value %s)" %
+                          node.sort.optional_sort.walk(self))
+        self.lines[-1] += ")))"
+
     def visit_sort(self, node):
         assert isinstance(node, smt.Sort)
         return self.escape_name(node.name)
@@ -209,6 +222,10 @@ class SMTLIB_Generator(smt.VC_Writer):
 
     def visit_record(self, node):
         assert isinstance(node, smt.Record)
+        return self.escape_name(node.name)
+
+    def visit_optional(self, node):
+        assert isinstance(node, smt.Optional)
         return self.escape_name(node.name)
 
     def visit_boolean_literal(self, node, tr_sort):
@@ -270,6 +287,18 @@ class SMTLIB_Generator(smt.VC_Writer):
         assert isinstance(node, smt.Comparison)
         return "(%s %s %s)" % (node.operator, tr_lhs, tr_rhs)
 
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, smt.Record_Null_Check)
+        return "((_ is %s) %s)" % (
+            self.escape_name(node.record.sort.name + "__null"),
+            tr_record)
+
+    def visit_optional_null_check(self, node, tr_op):
+        assert isinstance(node, smt.Optional_Null_Check)
+        return "((_ is %s) %s)" % (
+            self.escape_name(node.op.sort.name + "__null"),
+            tr_op)
+
     def visit_conversion_to_real(self, node, tr_value):
         assert isinstance(node, smt.Conversion_To_Real)
         return "(to_real %s)" % tr_value
@@ -330,11 +359,9 @@ class SMTLIB_Generator(smt.VC_Writer):
         assert isinstance(node, smt.Record_Access)
         return "(%s %s)" % (node.component, tr_record)
 
-    def visit_record_null_check(self, node, tr_record):
-        assert isinstance(node, smt.Record_Null_Check)
-        return "((_ is %s) %s)" % (
-            self.escape_name(node.record.sort.name + "__null"),
-            tr_record)
+    def visit_optional_value(self, node, tr_op):
+        assert isinstance(node, smt.Optional_Value)
+        return "(value %s)" % tr_op
 
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, smt.Function_Application)

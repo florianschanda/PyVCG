@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023, Florian Schanda                         ##
+##              Copyright (C) 2023-2026, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -68,6 +68,10 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Record_Declaration)
 
     @abstractmethod
+    def visit_optional_declaration(self, node):
+        assert isinstance(node, Optional_Declaration)
+
+    @abstractmethod
     def visit_sort(self, node):
         assert isinstance(node, Sort)
 
@@ -87,6 +91,10 @@ class Visitor(metaclass=ABCMeta):
     @abstractmethod
     def visit_record(self, node):
         assert isinstance(node, Record)
+
+    @abstractmethod
+    def visit_optional(self, node):
+        assert isinstance(node, Optional)
 
     @abstractmethod
     def visit_boolean_literal(self, node, tr_sort):
@@ -141,6 +149,14 @@ class Visitor(metaclass=ABCMeta):
     @abstractmethod
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
+
+    @abstractmethod
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, Record_Null_Check)
+
+    @abstractmethod
+    def visit_optional_null_check(self, node, tr_op):
+        assert isinstance(node, Optional_Null_Check)
 
     @abstractmethod
     def visit_conversion_to_real(self, node, tr_value):
@@ -199,8 +215,8 @@ class Visitor(metaclass=ABCMeta):
         assert isinstance(node, Record_Access)
 
     @abstractmethod
-    def visit_record_null_check(self, node, tr_record):
-        assert isinstance(node, Record_Null_Check)
+    def visit_optional_value(self, node, tr_op):
+        assert isinstance(node, Optional_Value)
 
     @abstractmethod
     def visit_function_application(self, node, tr_function, tr_args):
@@ -321,6 +337,11 @@ class Logic_Visitor(Visitor):
         self.logics.add("datatypes")
         node.sort.walk(self)
 
+    def visit_optional_declaration(self, node):
+        assert isinstance(node, Optional_Declaration)
+        self.logics.add("datatypes")
+        node.sort.walk(self)
+
     def visit_sort(self, node):
         assert isinstance(node, Sort)
         if node.name == "Bool":
@@ -359,6 +380,11 @@ class Logic_Visitor(Visitor):
         for sort in node.components.values():
             if sort is not node:
                 sort.walk(self)
+
+    def visit_optional(self, node):
+        assert isinstance(node, Optional)
+        self.logics.add("datatypes")
+        node.optional_sort.walk(self)
 
     def visit_boolean_literal(self, node, tr_sort):
         assert isinstance(node, Boolean_Literal)
@@ -402,6 +428,14 @@ class Logic_Visitor(Visitor):
 
     def visit_comparison(self, node, tr_lhs, tr_rhs):
         assert isinstance(node, Comparison)
+
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, Record_Null_Check)
+        self.logics.add("datatypes")
+
+    def visit_optional_null_check(self, node, tr_op):
+        assert isinstance(node, Optional_Null_Check)
+        self.logics.add("datatypes")
 
     def visit_conversion_to_real(self, node, tr_value):
         assert isinstance(node, Conversion_To_Real)
@@ -469,8 +503,8 @@ class Logic_Visitor(Visitor):
         assert isinstance(node, Record_Access)
         self.logics.add("datatypes")
 
-    def visit_record_null_check(self, node, tr_record):
-        assert isinstance(node, Record_Null_Check)
+    def visit_optional_value(self, node, tr_op):
+        assert isinstance(node, Optional_Value)
         self.logics.add("datatypes")
 
     def visit_function_application(self, node, tr_function, tr_args):
@@ -746,6 +780,21 @@ class Record_Declaration(Statement):
         self.sort.check_recursion_rec(new_visited)
 
 
+class Optional_Declaration(Statement):
+    def __init__(self, sort, comment=None):
+        super().__init__(comment)
+        assert isinstance(sort, Optional)
+        self.sort = sort
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_optional_declaration(self)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+
+
 ##############################################################################
 # Sorts
 ##############################################################################
@@ -792,6 +841,21 @@ class Record(Sort):
         for component_type in self.components.values():
             if component_type is not self:
                 component_type.check_recursion_rec(new_visited)
+
+
+class Optional(Sort):
+    def __init__(self, sort):
+        assert isinstance(sort, Sort)
+        super().__init__("optional__%s" % sort.name)
+        self.optional_sort = sort
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_optional(self)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.optional_sort.check_recursion_rec(new_visited)
 
 
 class Sequence_Sort(Parametric_Sort):
@@ -1064,6 +1128,43 @@ class Comparison(Expression):
         self.sort.check_recursion_rec(new_visited)
         self.lhs.check_recursion_rec(new_visited)
         self.rhs.check_recursion_rec(new_visited)
+
+
+class Record_Null_Check(Expression):
+    def __init__(self, record):
+        assert isinstance(record, Expression)
+        assert isinstance(record.sort, Record)
+        assert record.sort.is_recursive, "non-recursive records cannot be null"
+        super().__init__(BUILTIN_BOOLEAN)
+        self.record = record
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        return visitor.visit_record_null_check(self,
+                                               self.record.walk(visitor))
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.record.check_recursion_rec(new_visited)
+
+
+class Optional_Null_Check(Expression):
+    def __init__(self, op):
+        assert isinstance(op, Expression)
+        assert isinstance(op.sort, Optional)
+        super().__init__(BUILTIN_BOOLEAN)
+        self.op = op
+
+    def walk(self, visitor):
+        assert isinstance(visitor, Visitor)
+        tr_op = self.op.walk(visitor)
+        return visitor.visit_optional_null_check(self, tr_op)
+
+    def check_recursion_rec(self, visited):
+        new_visited = self.check_recursion_enforce(visited)
+        self.sort.check_recursion_rec(new_visited)
+        self.op.check_recursion_rec(new_visited)
 
 
 ##############################################################################
@@ -1376,23 +1477,22 @@ class Record_Access(Expression):
         self.record.check_recursion_rec(new_visited)
 
 
-class Record_Null_Check(Expression):
-    def __init__(self, record):
-        assert isinstance(record, Expression)
-        assert isinstance(record.sort, Record)
-        assert record.sort.is_recursive, "non-recursive records cannot be null"
-        super().__init__(BUILTIN_BOOLEAN)
-        self.record = record
+class Optional_Value(Expression):
+    def __init__(self, op):
+        assert isinstance(op, Expression)
+        assert isinstance(op.sort, Optional)
+        super().__init__(op.sort.optional_sort)
+        self.op = op
 
     def walk(self, visitor):
         assert isinstance(visitor, Visitor)
-        return visitor.visit_record_null_check(self,
-                                               self.record.walk(visitor))
+        return visitor.visit_optional_value(self,
+                                            self.op.walk(visitor))
 
     def check_recursion_rec(self, visited):
         new_visited = self.check_recursion_enforce(visited)
         self.sort.check_recursion_rec(new_visited)
-        self.record.check_recursion_rec(new_visited)
+        self.op.check_recursion_rec(new_visited)
 
 
 class Function_Application(Expression):

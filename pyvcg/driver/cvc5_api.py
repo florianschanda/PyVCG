@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023-2025, Florian Schanda                    ##
+##              Copyright (C) 2023-2026, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -67,6 +67,16 @@ class CVC5_Solver(smt.VC_Solver):
                     rv[name] = self.term_to_python(sort.components[name],
                                                    term[idx])
                 return rv
+        elif isinstance(sort, smt.Optional):
+            assert term.getKind() == cvc5.Kind.APPLY_CONSTRUCTOR
+            cons_name = term[0].getSymbol()
+            assert isinstance(cons_name, str)
+            assert cons_name.endswith("__cons") or cons_name.endswith("__null")
+            if cons_name.endswith("__null"):
+                return None
+            else:
+                return self.term_to_python(sort.optional_sort,
+                                           term[1])
         elif sort.name == "Bool":
             return term.getBooleanValue()
         elif sort.name == "Int":
@@ -280,6 +290,21 @@ class CVC5_Solver(smt.VC_Solver):
             sort = self.solver.declareDatatype(node.sort.name, ctor)
         self.record_mapping[node.sort] = sort
 
+    def visit_optional_declaration(self, node):
+        assert isinstance(node, smt.Optional_Declaration)
+
+        ctor = self.solver.mkDatatypeConstructorDecl(node.sort.name +
+                                                     "__cons")
+        null_ctor = self.solver.mkDatatypeConstructorDecl(node.sort.name +
+                                                          "__null")
+        ctor.addSelector("value", node.sort.optional_sort.walk(self))
+
+        sort = self.solver.declareDatatype(node.sort.name,
+                                           null_ctor,
+                                           ctor)
+
+        self.record_mapping[node.sort] = sort
+
     def visit_sort(self, node):
         assert isinstance(node, smt.Sort)
 
@@ -318,6 +343,10 @@ class CVC5_Solver(smt.VC_Solver):
 
     def visit_record(self, node):
         assert isinstance(node, smt.Record)
+        return self.record_mapping[node]
+
+    def visit_optional(self, node):
+        assert isinstance(node, smt.Optional)
         return self.record_mapping[node]
 
     def visit_boolean_literal(self, node, tr_sort):
@@ -395,6 +424,26 @@ class CVC5_Solver(smt.VC_Solver):
                 "="  : cvc5.Kind.EQUAL}
 
         return self.solver.mkTerm(kind[node.operator], tr_lhs, tr_rhs)
+
+    def visit_record_null_check(self, node, tr_record):
+        assert isinstance(node, smt.Record_Null_Check)
+        s_record_sort = self.record_mapping[node.record.sort]
+        s_dt = s_record_sort.getDatatype()
+        s_cons = s_dt.getConstructor(node.record.sort.name + "__null")
+        return self.solver.mkTerm(
+            cvc5.Kind.APPLY_TESTER,
+            s_cons.getTesterTerm(),
+            tr_record)
+
+    def visit_optional_null_check(self, node, tr_op):
+        assert isinstance(node, smt.Optional_Null_Check)
+        s_optional_sort = self.record_mapping[node.op.sort]
+        s_dt = s_optional_sort.getDatatype()
+        s_cons = s_dt.getConstructor(node.op.sort.name + "__null")
+        return self.solver.mkTerm(
+            cvc5.Kind.APPLY_TESTER,
+            s_cons.getTesterTerm(),
+            tr_op)
 
     def visit_conversion_to_real(self, node, tr_value):
         assert isinstance(node, smt.Conversion_To_Real)
@@ -500,15 +549,14 @@ class CVC5_Solver(smt.VC_Solver):
                                   s_selector.getTerm(),
                                   tr_record)
 
-    def visit_record_null_check(self, node, tr_record):
-        assert isinstance(node, smt.Record_Null_Check)
-        s_record_sort = self.record_mapping[node.record.sort]
-        s_dt = s_record_sort.getDatatype()
-        s_cons = s_dt.getConstructor(node.record.sort.name + "__null")
-        return self.solver.mkTerm(
-            cvc5.Kind.APPLY_TESTER,
-            s_cons.getTesterTerm(),
-            tr_record)
+    def visit_optional_value(self, node, tr_op):
+        assert isinstance(node, smt.Optional_Value)
+        assert node.op.sort in self.record_mapping
+        s_optional_sort = self.record_mapping[node.op.sort]
+        s_selector = s_optional_sort.getDatatype().getSelector("value")
+        return self.solver.mkTerm(cvc5.Kind.APPLY_SELECTOR,
+                                  s_selector.getTerm(),
+                                  tr_op)
 
     def visit_function_application(self, node, tr_function, tr_args):
         assert isinstance(node, smt.Function_Application)

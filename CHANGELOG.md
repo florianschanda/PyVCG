@@ -10,7 +10,9 @@
 
 ### 1.0.10-dev
 
-
+* Add support for "optional" types. These are really just datatypes
+  with a single null constructor and a value constructor. However they
+  come out correctly in Python as `null` or the actual value.
 
 ### 1.0.9
 

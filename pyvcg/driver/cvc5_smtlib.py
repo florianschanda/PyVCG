@@ -3,7 +3,7 @@
 ##                                                                          ##
 ##                   Verification Condition Generator                       ##
 ##                                                                          ##
-##              Copyright (C) 2023-2025, Florian Schanda                    ##
+##              Copyright (C) 2023-2026, Florian Schanda                    ##
 ##                                                                          ##
 ##  This file is part of PyVCG.                                             ##
 ##                                                                          ##
@@ -242,6 +242,9 @@ class CVC5_Result_Parser:
         elif isinstance(typ, smt.Record):
             return self.parse_record(typ)
 
+        elif isinstance(typ, smt.Optional):
+            return self.parse_optional(typ)
+
         else:  # pragma: no cover
             raise Parse_Error("unexpected sort class %s" %
                               typ.__class__.__name__)
@@ -358,6 +361,27 @@ class CVC5_Result_Parser:
             else:  # pragma: no cover
                 self.error("unexpected constructor %s" %
                            self.ct.value)
+        return rv
+
+    def parse_optional(self, typ):
+        assert isinstance(typ, smt.Optional)
+        if self.peek("BRA"):
+            self.match("BRA")
+            self.match("IDENTIFIER")
+            if typ.name + "__cons" != self.ct.value:  # pragma: no cover
+                self.error("unexpected constructor %s (expected %s)" %
+                           (self.ct.value,
+                            typ.name + "__cons"))
+            rv = self.parse_value(typ.optional_sort)
+            self.match("KET")
+        else:
+            self.match("IDENTIFIER")
+            if self.ct.value == typ.name + "__null":
+                rv = None
+            else:  # pragma: no cover
+                self.error("unexpected constructor %s" %
+                           self.ct.value)
+        # pylint: disable=possibly-used-before-assignment
         return rv
 
 
