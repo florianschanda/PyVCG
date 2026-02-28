@@ -317,7 +317,7 @@ class CVC5_Result_Parser:
         assert isinstance(etyp, smt.Sort)
         self.match("BRA")
         self.match("IDENTIFIER")
-        if self.ct.value == "seq.++":
+        if self.ct.value in ("seq.++", "str.++"):
             rv = []
             while self.nt and not self.peek("KET"):
                 rv += self.parse_seq(etyp)
