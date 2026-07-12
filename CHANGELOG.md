@@ -10,7 +10,7 @@
 
 ### 1.0.11-dev
 
-
+* Move to CVC5 1.3.4
 
 ### 1.0.10
 
@@ -18,7 +18,7 @@
   with a single null constructor and a value constructor. However they
   come out correctly in Python as `null` or the actual value.
 
-* Move to CVC 1.3.2
+* Move to CVC5 1.3.2
 
 ### 1.0.9
 
@@ -42,18 +42,18 @@
     uninterpreted function result). This checking has to happen inside
     the program driving PyVCG, it cannot happen inside PyVCG.
 
-* Move to CVC 1.3.1.
+* Move to CVC5 1.3.1.
 
 * Add support for Python up to 3.14.
 
 ### 1.0.8
 
-* Move to CVC 1.3.0. This should now include Python support up to
+* Move to CVC5 1.3.0. This should now include Python support up to
   3.13.
 
 ### 1.0.7
 
-* Move to CVC 1.2.0. This should now include Windows support.
+* Move to CVC5 1.2.0. This should now include Windows support.
 
 ### 1.0.6
 
@@ -66,7 +66,7 @@
 
 ### 1.0.4
 
-* Move to CVC 1.0.8. This means we can now support Python 3.11 as
+* Move to CVC5 1.0.8. This means we can now support Python 3.11 as
   well.
 
 ### 1.0.3
